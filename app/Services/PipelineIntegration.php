@@ -142,6 +142,54 @@ class PipelineIntegration
         }, 3);
     }
 
+    public function delete(array $input, User $user): array
+    {
+        $input = Validator::make(['operation' => $input], [
+            'operation' => 'required|array:id,expected_revision,confirm_name,request_id',
+            'operation.id' => 'required|integer|min:1',
+            'operation.expected_revision' => 'required|integer|min:1',
+            'operation.confirm_name' => 'required|string|max:255',
+            'operation.request_id' => 'required|uuid',
+        ])->validate()['operation'];
+        $client = $user->currentAccessToken()->client_id;
+        ksort($input);
+        $hash = hash('sha256', json_encode(['delete', $input], JSON_THROW_ON_ERROR));
+
+        return DB::transaction(function () use ($input, $user, $client, $hash): array {
+            // Check the receipt before loading the row: a successful retry must work after deletion.
+            $previous = DB::table('mcp_operations')->where('user_id', $user->id)->where('client_id', $client)
+                ->where('request_id', $input['request_id'])->first();
+            if ($previous) {
+                if (! hash_equals($previous->payload_hash, $hash)) {
+                    throw ValidationException::withMessages(['request_id' => 'Questo request_id è già stato usato con dati diversi.']);
+                }
+
+                return ['deletion' => json_decode($previous->after, true), 'replayed' => true];
+            }
+            $item = Collaboration::findOrFail($input['id']);
+            if ($item->revision !== $input['expected_revision']) {
+                throw ValidationException::withMessages(['expected_revision' => 'CONFLICT: il contatto è cambiato. Rileggi i dati e chiedi una nuova conferma prima di eliminarlo.']);
+            }
+            if (! hash_equals($item->name, $input['confirm_name'])) {
+                throw ValidationException::withMessages(['confirm_name' => 'Il nome non corrisponde al contatto selezionato. Rileggi nome e ID e chiedi conferma.']);
+            }
+            $before = $this->snapshot($item);
+            $deleted = Collaboration::whereKey($item->id)->where('revision', $input['expected_revision'])->delete();
+            if (! $deleted) {
+                throw ValidationException::withMessages(['expected_revision' => 'CONFLICT: impossibile eliminare la revisione confermata. Rileggi i dati.']);
+            }
+            $receipt = ['id' => $item->id, 'name' => $item->name, 'deleted' => true, 'deleted_at' => now()->toIso8601String()];
+            DB::table('mcp_operations')->insert([
+                'user_id' => $user->id, 'client_id' => $client, 'request_id' => $input['request_id'],
+                'action' => 'delete', 'payload_hash' => $hash, 'collaboration_id' => $item->id,
+                'before' => json_encode($before, JSON_THROW_ON_ERROR),
+                'after' => json_encode($receipt, JSON_THROW_ON_ERROR), 'created_at' => now(),
+            ]);
+
+            return ['deletion' => $receipt, 'replayed' => false];
+        }, 3);
+    }
+
     private function validateFields(array $fields, Collaboration $item): array
     {
         $rules = [

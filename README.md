@@ -55,7 +55,7 @@ La board mostra al massimo 30 schede per colonna; l’elenco paginato sottostant
 
 ## ChatGPT via MCP (senza Auth0)
 
-Il server `/mcp` espone lettura, ricerca, creazione e aggiornamento della pipeline con OAuth Passport e PKCE S256. Richiede un amministratore distinto dall’accesso tramite codice. L’area `/integrazioni` mostra collegamenti revocabili e registro modifiche; idempotenza e revisioni proteggono da duplicati e sovrascritture. Non espone eliminazioni o invio email.
+Il server `/mcp` espone lettura, ricerca, creazione, aggiornamento ed eliminazione della pipeline con OAuth Passport e PKCE S256. Richiede un amministratore distinto dall’accesso tramite codice. L’area `/integrazioni` mostra collegamenti revocabili e registro modifiche; idempotenza e revisioni proteggono da duplicati e sovrascritture. L’eliminazione definitiva di un singolo contatto richiede il permesso separato `pipeline:delete`, il nome esatto, la revisione e la conferma esplicita dell’utente in chat; il registro mantiene lo snapshot precedente. Non invia email.
 
 Per configurazione VPS, chiavi, account amministratore e collegamento in ChatGPT segui [la guida completa](docs/CHATGPT-VPS.md). La disponibilità delle azioni di scrittura dipende dal piano ChatGPT; il server non elimina le limitazioni del piano.
 

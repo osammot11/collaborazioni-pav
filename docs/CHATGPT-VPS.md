@@ -99,7 +99,7 @@ curl -i -X POST https://collaborazioni.tommasogiovannoni.com/mcp \
   --data '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
 ```
 
-I primi due rispondono `200` con metadata JSON. L’ultimo restituisce i cinque strumenti e i permessi richiesti, senza dati dei clienti. La chiamata seguente **deve** rispondere `401` con `WWW-Authenticate` e l’URL dei metadata:
+I primi due rispondono `200` con metadata JSON. L’ultimo restituisce i sei strumenti e i permessi richiesti, senza dati dei clienti. La chiamata seguente **deve** rispondere `401` con `WWW-Authenticate` e l’URL dei metadata:
 
 ```bash
 curl -i -X POST https://collaborazioni.tommasogiovannoni.com/mcp \
@@ -136,6 +136,7 @@ Le funzioni disponibili sono:
 | `get_opportunity` | lettura | Scheda, revisione e storico |
 | `create_opportunity` | scrittura | Nuova opportunità |
 | `update_opportunity` | scrittura | Modifica parziale, note e follow-up |
+| `delete_opportunity` | eliminazione (`pipeline:delete`) | Elimina definitivamente un singolo contatto dopo conferma |
 
 Gli importi MCP sono stringhe come `1250.00`, le date `YYYY-MM-DD`. La UI continua a mostrare importi italiani. I campi omessi in una modifica sono preservati; `null` cancella i campi opzionali. Il passaggio a Contratto imposta Acquisito, ma non segna automaticamente i pagamenti come incassati.
 
@@ -143,7 +144,13 @@ Ogni modifica richiede un UUID `request_id`. Ritentare la stessa richiesta con l
 
 Apri `/integrazioni` con l’amministratore per leggere il registro prima/dopo e **Revoca** il collegamento per bloccare sia access token sia refresh token. Il registro mantiene le modifiche anche dopo revoca/eliminazione dell’opportunità e contiene dati riservati: includilo nella protezione del database e nella politica di conservazione. Eliminare l’app soltanto da ChatGPT non sostituisce una revoca dal gestionale.
 
-Non sono disponibili strumenti di eliminazione o invio email. ChatGPT non legge automaticamente la tua casella: outbound e risposte vanno registrati nell’app o descritti nella conversazione. Non ci sono esecuzioni autonome/schedulate.
+L’eliminazione è definitiva: rimuove il contatto/opportunità e lo storico della pipeline, ma conserva lo snapshot precedente nel registro integrazioni. Non esiste un cestino o un pulsante di ripristino. `delete_opportunity` richiede `id`, `expected_revision`, `confirm_name` esattamente uguale al nome corrente e `request_id` UUID. Prima di chiamarlo l’assistente deve rileggere la scheda, mostrare nome e ID e ottenere la conferma esplicita dell’utente. Il nome verificato protegge da errori di selezione, ma non è una prova tecnica del consenso umano: le conferme del client e il permesso OAuth restano necessari. Non supporta eliminazioni massive.
+
+### Abilitare l’eliminazione su un plugin già collegato
+
+Dopo aver pubblicato il codice aggiornato su GitHub, sulla VPS esegui `git pull --ff-only origin main`, `php artisan optimize:clear` e `php artisan optimize`. Non servono nuove migrazioni né rigenerare chiavi. Nel plugin ChatGPT aggiorna/scansiona nuovamente gli strumenti e abilita `delete_opportunity` dove richiesto dai controlli del workspace. Riautorizza il collegamento includendo `pipeline:delete`: i token precedenti con solo lettura/scrittura non possono eliminare. Se i nuovi scope non vengono richiesti, revoca il vecchio collegamento da `/integrazioni` e riconnetti il plugin con `pipeline:read pipeline:write pipeline:delete offline_access`.
+
+Non sono disponibili strumenti di invio email. ChatGPT non legge automaticamente la tua casella: outbound e risposte vanno registrati nell’app o descritti nella conversazione. Non ci sono esecuzioni autonome/schedulate.
 
 ## Sicurezza e manutenzione
 

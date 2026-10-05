@@ -8,7 +8,10 @@
     <ul class="permission-list">
         @foreach ($scopes as $scope)<li>{{ $scope->description }}</li>@endforeach
     </ul>
-    <p class="muted">Il nome dell’app è dichiarato dal richiedente. Approva solo se hai avviato tu il collegamento in ChatGPT. Nessun permesso di eliminazione. Puoi revocare l’accesso dalla pagina ChatGPT del gestionale.</p>
+    @if (collect($scopes)->contains(fn ($scope) => $scope->id === 'pipeline:delete'))
+        <p class="field-error">Attenzione: stai autorizzando anche l’eliminazione definitiva di contatti e del loro storico di pipeline. Non esiste un cestino o ripristino nell’app.</p>
+    @endif
+    <p class="muted">Il nome dell’app è dichiarato dal richiedente. Approva solo se hai avviato tu il collegamento in ChatGPT. Puoi revocare l’accesso dalla pagina ChatGPT del gestionale.</p>
     <div class="integration-actions">
         <form method="POST" action="{{ route('passport.authorizations.approve') }}">
             @csrf

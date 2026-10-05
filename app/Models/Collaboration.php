@@ -26,6 +26,7 @@ class Collaboration extends Model
     ];
 
     protected $attributes = [
+        'revision' => 1,
         'pipeline_stage' => 'da_contattare',
         'pipeline_outcome' => 'in_corso',
     ];

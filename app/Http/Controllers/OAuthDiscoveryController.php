@@ -18,7 +18,7 @@ class OAuthDiscoveryController extends Controller
         return response()->json([
             'resource' => config('integrations.resource'),
             'authorization_servers' => [self::issuer()],
-            'scopes_supported' => ['pipeline:read', 'pipeline:write', 'offline_access'],
+            'scopes_supported' => ['pipeline:read', 'pipeline:write', 'pipeline:delete', 'offline_access'],
             'bearer_methods_supported' => ['header'],
             'resource_name' => 'Produce a Value · Pipeline',
         ]);
@@ -37,7 +37,7 @@ class OAuthDiscoveryController extends Controller
             'grant_types_supported' => ['authorization_code', 'refresh_token'],
             'token_endpoint_auth_methods_supported' => ['none'],
             'code_challenge_methods_supported' => ['S256'],
-            'scopes_supported' => ['pipeline:read', 'pipeline:write', 'offline_access'],
+            'scopes_supported' => ['pipeline:read', 'pipeline:write', 'pipeline:delete', 'offline_access'],
             'authorization_response_iss_parameter_supported' => true,
         ]);
     }
@@ -63,7 +63,7 @@ class OAuthDiscoveryController extends Controller
             'token_endpoint_auth_method' => 'none',
             'grant_types' => ['authorization_code', 'refresh_token'],
             'response_types' => ['code'],
-            'scope' => 'pipeline:read pipeline:write offline_access',
+            'scope' => 'pipeline:read pipeline:write pipeline:delete offline_access',
         ], 201)->header('Cache-Control', 'no-store');
     }
 }

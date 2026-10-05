@@ -29,6 +29,7 @@ class McpIntegrationTest extends TestCase
 
     private function loginAdmin(): User
     {
+        Auth::shouldUse('web');
         $user = User::factory()->create(['password' => 'correct-password-123', 'is_admin' => true]);
         $this->post('/login', ['email' => $user->email, 'password' => 'correct-password-123'])->assertRedirect('/integrazioni');
 
@@ -49,6 +50,11 @@ class McpIntegrationTest extends TestCase
             'code_challenge' => rtrim(strtr(base64_encode(hash('sha256', $verifier, true)), '+/', '-_'), '='),
             'code_challenge_method' => 'S256', 'resource' => config('integrations.resource')];
         $response = $this->get('/oauth/authorize?'.http_build_query($params))->assertOk()->assertSee('Autorizza collegamento');
+        if (str_contains($scope, 'pipeline:delete')) {
+            $response->assertSee('stai autorizzando anche l’eliminazione definitiva');
+        } else {
+            $response->assertDontSee('stai autorizzando anche l’eliminazione definitiva');
+        }
         $authToken = $response->viewData('authToken');
         $approved = $this->post('/oauth/authorize', ['auth_token' => $authToken])->assertRedirect();
         parse_str(parse_url($approved->headers->get('Location'), PHP_URL_QUERY), $query);
@@ -85,7 +91,12 @@ class McpIntegrationTest extends TestCase
         $this->getJson('/.well-known/oauth-protected-resource/mcp')->assertOk()->assertJsonPath('resource', config('integrations.resource'));
         $this->getJson('/.well-known/oauth-authorization-server')->assertOk()->assertJsonPath('code_challenge_methods_supported.0', 'S256');
         $this->postJson('/mcp', ['jsonrpc' => '2.0', 'id' => 1, 'method' => 'tools/list'])
-            ->assertOk()->assertJsonCount(5, 'result.tools')->assertJsonPath('result.tools.0.securitySchemes.0.scopes.0', 'pipeline:read');
+            ->assertOk()->assertJsonCount(6, 'result.tools')->assertJsonPath('result.tools.0.securitySchemes.0.scopes.0', 'pipeline:read')
+            ->assertJsonPath('result.tools.5.name', 'delete_opportunity')
+            ->assertJsonPath('result.tools.5.securitySchemes.0.scopes.0', 'pipeline:delete')
+            ->assertJsonPath('result.tools.5.annotations.readOnlyHint', false)
+            ->assertJsonPath('result.tools.5.annotations.destructiveHint', true)
+            ->assertJsonPath('result.tools.5.annotations.idempotentHint', true);
         $this->rpc('search_opportunities')->assertUnauthorized()->assertHeader('WWW-Authenticate',
             'Bearer resource_metadata="'.rtrim(config('app.url'), '/').'/.well-known/oauth-protected-resource/mcp"');
         $this->withSession(['collaborations_authorized' => true])->get('/integrazioni')->assertRedirect('/login');
@@ -207,6 +218,70 @@ class McpIntegrationTest extends TestCase
             ->assertJsonCount(1, 'result.structuredContent.items');
         $this->rpc('search_opportunities', ['query' => '%'], $auth['access_token'])->assertJsonPath('result.structuredContent.total', 1);
         $this->rpc('search_opportunities', ['per_page' => 51], $auth['access_token'])->assertJsonPath('result.isError', true);
+    }
+
+    public function test_delete_removes_only_the_confirmed_contact_and_history_and_preserves_audit(): void
+    {
+        $auth = $this->credentials('pipeline:read pipeline:write pipeline:delete');
+        $create = ['request_id' => (string) Str::uuid(), 'fields' => ['name' => 'Contatto da eliminare', 'notes' => 'Nota da conservare nel registro']];
+        $created = $this->rpc('create_opportunity', $create, $auth['access_token'])->assertJsonPath('result.isError', false);
+        $id = $created->json('result.structuredContent.opportunity.id');
+        $other = Collaboration::create(['name' => 'Non eliminare', 'status' => 'forse', 'monthly_revenue' => 0, 'one_time_revenue' => 0]);
+        $delete = ['id' => $id, 'expected_revision' => 1, 'confirm_name' => 'Contatto da eliminare', 'request_id' => (string) Str::uuid()];
+        $this->rpc('delete_opportunity', $delete, $auth['access_token'])->assertOk()
+            ->assertJsonPath('result.isError', false)->assertJsonPath('result.structuredContent.deletion.deleted', true)
+            ->assertJsonPath('result.structuredContent.deletion.id', $id)->assertJsonPath('result.structuredContent.replayed', false);
+        $this->assertDatabaseMissing('collaborations', ['id' => $id]);
+        $this->assertDatabaseMissing('pipeline_events', ['collaboration_id' => $id]);
+        $this->assertDatabaseHas('collaborations', ['id' => $other->id]);
+        $this->assertDatabaseCount('mcp_operations', 2);
+        $audit = DB::table('mcp_operations')->where('action', 'delete')->first();
+        $this->assertSame('Nota da conservare nel registro', json_decode($audit->before, true)['notes']);
+        $this->assertTrue(json_decode($audit->after, true)['deleted']);
+        $this->rpc('delete_opportunity', $delete, $auth['access_token'])->assertJsonPath('result.structuredContent.replayed', true);
+        $this->assertDatabaseCount('mcp_operations', 2);
+        $this->rpc('get_opportunity', ['id' => $id], $auth['access_token'])->assertJsonPath('result.isError', true);
+        $this->get('/integrazioni')->assertOk()->assertSee('Eliminazione')->assertSee('Contatto da eliminare');
+        $delete['request_id'] = (string) Str::uuid();
+        $this->rpc('delete_opportunity', $delete, $auth['access_token'])->assertJsonPath('result.isError', true);
+        $this->assertDatabaseCount('mcp_operations', 2);
+    }
+
+    public function test_delete_requires_dedicated_scope_and_valid_confirmation_and_revision(): void
+    {
+        $auth = $this->credentials();
+        $item = Collaboration::create(['name' => 'Cliente confermato', 'status' => 'forse', 'monthly_revenue' => 0, 'one_time_revenue' => 0]);
+        $delete = ['id' => $item->id, 'expected_revision' => 1, 'confirm_name' => $item->name, 'request_id' => (string) Str::uuid()];
+        $this->rpc('delete_opportunity', $delete, $auth['access_token'])->assertJsonPath('result.isError', true)
+            ->assertSee('pipeline:delete');
+        $auth = $this->credentials('pipeline:read pipeline:delete');
+        foreach ([['confirm_name' => 'Altro cliente'], ['confirm_name' => null], ['expected_revision' => 2],
+            ['expected_revision' => null], ['request_id' => 'invalid'], ['fields' => ['name' => 'Tentativo']]] as $invalid) {
+            $this->rpc('delete_opportunity', [...$delete, ...$invalid], $auth['access_token'])->assertJsonPath('result.isError', true);
+            $this->assertDatabaseHas('collaborations', ['id' => $item->id]);
+        }
+        $item->update(['notes' => 'Modifica intervenuta dopo la lettura']);
+        $this->rpc('delete_opportunity', $delete, $auth['access_token'])->assertJsonPath('result.isError', true)->assertSee('CONFLICT');
+        $this->assertDatabaseCount('mcp_operations', 0);
+        $this->rpc('delete_opportunity', $delete)->assertUnauthorized();
+    }
+
+    public function test_delete_rejects_reused_request_ids_with_different_actions_or_contacts(): void
+    {
+        $auth = $this->credentials('pipeline:read pipeline:write pipeline:delete');
+        $uuid = (string) Str::uuid();
+        $created = $this->rpc('create_opportunity', ['request_id' => $uuid, 'fields' => ['name' => 'Primo']], $auth['access_token']);
+        $id = $created->json('result.structuredContent.opportunity.id');
+        $delete = ['id' => $id, 'expected_revision' => 1, 'confirm_name' => 'Primo', 'request_id' => $uuid];
+        $this->rpc('delete_opportunity', $delete, $auth['access_token'])->assertJsonPath('result.isError', true);
+        $this->assertDatabaseHas('collaborations', ['id' => $id]);
+        $delete['request_id'] = (string) Str::uuid();
+        $this->rpc('delete_opportunity', $delete, $auth['access_token'])->assertJsonPath('result.isError', false);
+        $other = Collaboration::create(['name' => 'Secondo', 'status' => 'forse', 'monthly_revenue' => 0, 'one_time_revenue' => 0]);
+        $this->rpc('delete_opportunity', [...$delete, 'id' => $other->id, 'confirm_name' => 'Secondo'], $auth['access_token'])
+            ->assertJsonPath('result.isError', true);
+        $this->assertDatabaseHas('collaborations', ['id' => $other->id]);
+        $this->assertDatabaseCount('mcp_operations', 2);
     }
 
     public function test_admin_login_logout_and_csrf_protection(): void

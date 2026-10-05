@@ -24,7 +24,7 @@
     <h2>Registro modifiche ChatGPT</h2>
     @forelse ($operations as $operation)
         <details class="audit-entry">
-            <summary>{{ \Carbon\Carbon::parse($operation->created_at)->format('d/m/Y H:i') }} · {{ $operation->action === 'create' ? 'Creazione' : 'Modifica' }} · Opportunità #{{ $operation->collaboration_id }}</summary>
+            <summary>{{ \Carbon\Carbon::parse($operation->created_at)->format('d/m/Y H:i') }} · {{ match ($operation->action) { 'create' => 'Creazione', 'delete' => 'Eliminazione', default => 'Modifica' } }} · Opportunità #{{ $operation->collaboration_id }}</summary>
             <p class="muted">Richiesta {{ $operation->request_id }} · Client {{ $operation->client_id }}</p>
             <div class="audit-grid"><div><h3>Prima</h3><pre>{{ $operation->before ? json_encode(json_decode($operation->before), JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE) : 'Nuova opportunità' }}</pre></div><div><h3>Dopo</h3><pre>{{ json_encode(json_decode($operation->after), JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE) }}</pre></div></div>
         </details>

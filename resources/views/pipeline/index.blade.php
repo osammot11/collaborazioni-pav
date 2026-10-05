@@ -28,7 +28,10 @@
         </form>
     </section>
     <p class="muted pipeline-help">Puoi saltare fasi o riaprire una trattativa. Gli esiti restano nella fase raggiunta: “Senza risposta” è una tua valutazione, non viene assegnata automaticamente.</p>
-    <div class="pipeline-board" role="region" aria-label="Pipeline per fase" tabindex="0">
+    <div class="pipeline-scroll-top" data-pipeline-scroll-top role="region" aria-label="Scorri le fasi della pipeline" aria-controls="pipeline-board" tabindex="0" hidden>
+        <div data-pipeline-scroll-spacer aria-hidden="true"></div>
+    </div>
+    <div id="pipeline-board" class="pipeline-board" role="region" aria-label="Pipeline per fase" tabindex="0">
         @foreach ($columns as $column)
             @if ($column['stage']->value !== 'da_classificare' || $column['total'] > 0)
                 <section class="pipeline-column">
@@ -78,3 +81,7 @@
         {{ $results->links('components.pagination') }}
     </section>
 @endsection
+
+@push('scripts')
+<script src="{{ asset('js/pipeline.js') }}" defer></script>
+@endpush

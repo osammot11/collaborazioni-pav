@@ -21,8 +21,8 @@ abstract class PipelineTool extends Tool
     public function toArray(): array
     {
         $result = parent::toArray();
-        $write = in_array($this->action, ['create', 'update'], true);
-        $security = [['type' => 'oauth2', 'scopes' => [$write ? 'pipeline:write' : 'pipeline:read']]];
+        $write = in_array($this->action, ['create', 'update', 'delete'], true);
+        $security = [['type' => 'oauth2', 'scopes' => [$this->scope()]]];
         $result['securitySchemes'] = $security;
         $result['_meta']['securitySchemes'] = $security;
         $result['annotations'] = ['readOnlyHint' => ! $write, 'destructiveHint' => $write,
@@ -45,9 +45,16 @@ abstract class PipelineTool extends Tool
                 'follow_up' => ['type' => 'string', 'enum' => ['overdue', 'today', 'upcoming', 'none']],
                 'page' => $integer, 'per_page' => [...$integer, 'maximum' => 50]];
         }
-        if (in_array($this->action, ['get', 'update'], true)) {
+        if (in_array($this->action, ['get', 'update', 'delete'], true)) {
             $properties['id'] = $integer;
             $required[] = 'id';
+        }
+
+        if ($this->action === 'delete') {
+            $properties['expected_revision'] = [...$integer, 'description' => 'Revision corrente letta con get_opportunity, prima della conferma utente.'];
+            $properties['confirm_name'] = ['type' => 'string', 'description' => 'Nome esatto del contatto riletto e confermato dall’utente. Non costituisce prova del consenso: chiedilo in chat.'];
+            $properties['request_id'] = ['type' => 'string', 'format' => 'uuid', 'description' => 'UUID idempotenza: riusa solo per ritentare la stessa eliminazione.'];
+            $required = [...$required, 'expected_revision', 'confirm_name', 'request_id'];
         }
         if (in_array($this->action, ['create', 'update'], true)) {
             $fields = [];
@@ -79,8 +86,7 @@ abstract class PipelineTool extends Tool
 
     public function handle(Request $request, PipelineIntegration $pipeline): Response|ResponseFactory
     {
-        $write = in_array($this->action, ['create', 'update'], true);
-        $scope = $write ? 'pipeline:write' : 'pipeline:read';
+        $scope = $this->scope();
         if (! $request->user()?->is_admin || ! $request->user()->tokenCan($scope)) {
             return (new ResponseFactory(Response::error('Autorizzazione OAuth con permesso '.$scope.' richiesta.')))
                 ->withMeta('mcp/www_authenticate', ['Bearer resource_metadata="'.OAuthDiscoveryController::issuer()
@@ -91,6 +97,7 @@ abstract class PipelineTool extends Tool
                 'options' => $this->options(),
                 'search' => $pipeline->search($request->all()),
                 'get' => $pipeline->get($request->validate(['id' => 'required|integer|min:1'])['id']),
+                'delete' => $pipeline->delete($request->all(), $request->user()),
                 default => $pipeline->write($this->action, $request->all(), $request->user()),
             };
 
@@ -102,6 +109,15 @@ abstract class PipelineTool extends Tool
         }
     }
 
+    private function scope(): string
+    {
+        return match ($this->action) {
+            'delete' => 'pipeline:delete',
+            'create', 'update' => 'pipeline:write',
+            default => 'pipeline:read',
+        };
+    }
+
     private function options(): array
     {
         $map = fn ($enum) => array_map(fn ($case) => ['value' => $case->value, 'label' => $case->label()], $enum::cases());
@@ -109,6 +125,7 @@ abstract class PipelineTool extends Tool
         return ['stages' => $map(PipelineStage::class), 'outcomes' => $map(PipelineOutcome::class),
             'payment_statuses' => $map(CollaborationStatus::class), 'currency' => 'EUR', 'dates' => 'YYYY-MM-DD',
             'rules' => ['contratto implica vinto', 'fase/esito commerciale indipendenti dalla situazione del pagamento',
-                'update preserva i campi omessi; null cancella un campo opzionale', 'nessuna eliminazione via MCP']];
+                'update preserva i campi omessi; null cancella un campo opzionale',
+                'delete è definitivo, richiede pipeline:delete, revisione, nome esatto e conferma esplicita dell’utente']];
     }
 }

@@ -24,6 +24,7 @@ class AppServiceProvider extends ServiceProvider
             'offline_access' => 'Rinnovare il collegamento fino a revoca o scadenza del token di rinnovo',
             'pipeline:read' => 'Leggere opportunità, contatti, note e storico della pipeline',
             'pipeline:write' => 'Creare e modificare opportunità e note (nessuna eliminazione)',
+            'pipeline:delete' => 'Eliminare definitivamente singoli contatti/opportunità e il relativo storico di pipeline',
         ]);
         Passport::tokensExpireIn(now()->addHour());
         Passport::refreshTokensExpireIn(now()->addDays(30));

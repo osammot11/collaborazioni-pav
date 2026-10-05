@@ -22,6 +22,13 @@ class PipelineTest extends TestCase
         ], $data));
     }
 
+    public function test_horizontal_scroll_control_is_above_the_board_and_loads_its_script(): void
+    {
+        $response = $this->withSession(['collaborations_authorized' => true])->get(route('pipeline'))->assertOk();
+        $response->assertSeeInOrder(['data-pipeline-scroll-top', 'id="pipeline-board"'], false)
+            ->assertSee('aria-controls="pipeline-board"', false)->assertSee('js/pipeline.js');
+    }
+
     public function test_pipeline_and_updates_require_access(): void
     {
         $item = $this->opportunity();

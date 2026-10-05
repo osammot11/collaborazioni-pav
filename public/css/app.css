@@ -35,6 +35,14 @@
 .pipeline-help { font-size: 12px; margin-bottom: 18px; }
 .follow-up-banner { display: block; margin-bottom: 22px; padding: 16px 20px; border: 1px solid #ddd9ff; border-radius: 12px; background: #eeedff; color: var(--primary); font-weight: 600; text-decoration: none; }
 .pipeline-board { display: flex; gap: 16px; overflow-x: auto; align-items: flex-start; padding: 4px 0 20px; scroll-snap-type: x proximity; }
+.pipeline-scroll-top { overflow-x: scroll; overflow-y: hidden; height: 24px; margin-bottom: 12px; border-radius: 8px; background: #eeedff; scrollbar-color: #8b86ff #eeedff; }
+.pipeline-scroll-top [data-pipeline-scroll-spacer] { height: 1px; }
+.pipeline-scroll-top::-webkit-scrollbar { height: 14px; }
+.pipeline-scroll-top::-webkit-scrollbar-track { background: #eeedff; border-radius: 8px; }
+.pipeline-scroll-top::-webkit-scrollbar-thumb { background: #8b86ff; border: 3px solid #eeedff; border-radius: 8px; }
+.pipeline-scroll-top:focus-visible, .pipeline-board:focus-visible { outline: 2px solid var(--primary); outline-offset: 3px; }
+.pipeline-board.pipeline-scroll-enhanced { scrollbar-width: none; scroll-snap-type: none; }
+.pipeline-board.pipeline-scroll-enhanced::-webkit-scrollbar { display: none; }
 .pipeline-column { flex: 0 0 285px; background: #eaf0f6; border-radius: 16px; padding: 14px; scroll-snap-align: start; }
 .pipeline-column-heading { display: flex; gap: 10px; align-items: center; margin-bottom: 16px; }
 .pipeline-column-heading h2 { font-size: 15px; }
