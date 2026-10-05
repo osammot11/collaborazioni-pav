@@ -8,6 +8,7 @@ use App\Models\Collaboration;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\View\View;
 
 class CollaborationController extends Controller
@@ -85,7 +86,7 @@ class CollaborationController extends Controller
 
     public function store(CollaborationRequest $request): RedirectResponse
     {
-        Collaboration::create($request->validated());
+        DB::transaction(fn () => Collaboration::create($request->validated()));
 
         return redirect()->route('dashboard')->with('success', 'Collaborazione aggiunta con successo.');
     }
@@ -100,7 +101,7 @@ class CollaborationController extends Controller
 
     public function update(CollaborationRequest $request, Collaboration $collaboration): RedirectResponse
     {
-        $collaboration->update($request->validated());
+        DB::transaction(fn () => $collaboration->update($request->validated()));
 
         return redirect()->route('dashboard')->with('success', 'Collaborazione aggiornata.');
     }

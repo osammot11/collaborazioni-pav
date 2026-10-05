@@ -3,11 +3,14 @@
 namespace App\Http\Requests;
 
 use App\Enums\CollaborationStatus;
+use App\Http\Requests\Concerns\ValidatesPipeline;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
 class CollaborationRequest extends FormRequest
 {
+    use ValidatesPipeline;
+
     public function authorize(): bool
     {
         return true;
@@ -15,6 +18,7 @@ class CollaborationRequest extends FormRequest
 
     protected function prepareForValidation(): void
     {
+        $this->preparePipeline();
         $this->merge([
             'monthly_revenue' => $this->normalizeMoney($this->input('monthly_revenue')),
             'one_time_revenue' => $this->normalizeMoney($this->input('one_time_revenue')),
@@ -26,7 +30,7 @@ class CollaborationRequest extends FormRequest
 
     public function rules(): array
     {
-        return [
+        return array_merge($this->pipelineRules(), [
             'name' => ['required', 'string', 'max:255'],
             'description' => ['nullable', 'string', 'max:10000'],
             'monthly_revenue' => ['required', 'numeric', 'min:0', 'max:9999999999.99', 'decimal:0,2'],
@@ -34,7 +38,7 @@ class CollaborationRequest extends FormRequest
             'status' => ['required', Rule::enum(CollaborationStatus::class)],
             'payment_deadline' => ['nullable', 'date_format:Y-m-d'],
             'notes' => ['nullable', 'string', 'max:20000'],
-        ];
+        ]);
     }
 
     public function messages(): array
