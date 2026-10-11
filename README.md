@@ -43,7 +43,11 @@ La suite copre accesso, rate limit, CRUD, validazione, importi in formato italia
 
 ## Pipeline commerciale
 
-La pagina `/pipeline` organizza i contatti in fasi: Da contattare, Outbound inviato, Risposta ricevuta, Demo programmata, Demo svolta, Preventivo inviato, Negoziazione e Contratto. Ogni opportunità mantiene un esito indipendente: In corso/interessato, In attesa, Forse, Senza risposta, Rifiutato/perso o Acquisito. Contratto imposta automaticamente Acquisito. È possibile riaprire una trattativa cambiando fase ed esito.
+La fase **Pagato**, dopo Contratto, distingue l’accordo acquisito dall’incasso. Contratto non segna automaticamente il pagamento; Pagato imposta esito Acquisito e situazione Pagato e richiede `paid_at` (data effettiva non futura). `payment_deadline` resta la scadenza prevista: entrambe le date sono modificabili dal form e direttamente dalle card e visibili sulla board. Le scadenze scadute/odierne sono evidenziate solo per situazioni ancora da gestire. Per gli abbonamenti queste date non costituiscono un registro di rate: rappresentano il pagamento annotato nella scheda.
+
+La migrazione del 11/10/2026 aggiunge solo la data nullable: preserva tutti i dati e non inventa incassi né riclassifica automaticamente le schede esistenti. Impostare Pagato con la data reale per quelle già incassate. Il server MCP v1.2.0 espone il nuovo stato e `paid_at` negli strumenti esistenti; nessun nuovo scope OAuth. Dopo il deploy aggiornare i metadati del plugin. Sulla VPS, dopo backup SQLite e aggiornamento del codice: `php artisan optimize:clear`, `php artisan migrate --force`, `php artisan optimize`.
+
+La pagina `/pipeline` organizza i contatti in fasi: Da contattare, Outbound inviato, Risposta ricevuta, Demo programmata, Demo svolta, Preventivo inviato, Negoziazione, Contratto e Pagato. Ogni opportunità mantiene un esito indipendente: In corso/interessato, In attesa, Forse, Senza risposta, Rifiutato/perso o Acquisito. Contratto e Pagato impostano automaticamente Acquisito. È possibile riaprire una trattativa cambiando fase ed esito.
 
 Categoria, referente, email, servizio proposto, tipo e data demo, prossima azione e follow-up si gestiscono nel form. Le colonne permettono di cambiare fase/esito; tutti i passaggi vengono registrati nello storico della scheda. Il tipo di contratto è dedotto dagli importi: solo mensile = abbonamento, solo una tantum = una tantum, entrambi = ibrido.
 

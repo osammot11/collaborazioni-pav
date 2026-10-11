@@ -29,6 +29,59 @@ class PipelineTest extends TestCase
             ->assertSee('aria-controls="pipeline-board"', false)->assertSee('js/pipeline.js');
     }
 
+    public function test_paid_stage_records_actual_date_and_payment_status_without_changing_deadline(): void
+    {
+        $this->travelTo(now()->setDate(2026, 10, 11));
+        $item = $this->opportunity(['pipeline_stage' => 'contratto', 'pipeline_outcome' => 'vinto',
+            'status' => 'confermato', 'payment_deadline' => '2026-10-01']);
+        $this->assertSame('overdue', $item->deadlineState());
+        $this->withSession(['collaborations_authorized' => true])->patch(route('pipeline.update', $item), [
+            'pipeline_stage' => 'pagato', 'pipeline_outcome' => 'in_corso', 'paid_at' => '2026-10-10',
+        ])->assertSessionHasNoErrors();
+        $item->refresh();
+        $this->assertSame(PipelineStage::Paid, $item->pipeline_stage);
+        $this->assertSame('pagato', $item->status->value);
+        $this->assertSame(PipelineOutcome::Won, $item->pipeline_outcome);
+        $this->assertSame('2026-10-10', $item->paid_at->format('Y-m-d'));
+        $this->assertSame('2026-10-01', $item->payment_deadline->format('Y-m-d'));
+        $this->assertNull($item->deadlineState());
+        $this->assertSame(PipelineStage::Paid, $item->pipelineEvents()->first()->to_stage);
+        $this->withSession(['collaborations_authorized' => true])->get(route('pipeline', ['stage' => 'pagato']))
+            ->assertOk()->assertSee('Incassato il 10/10/2026')->assertSee('Scadenza pagamento: 01/10/2026')
+            ->assertViewHas('results', fn ($results) => $results->total() === 1);
+    }
+
+    public function test_paid_stage_requires_a_real_non_future_date(): void
+    {
+        $this->travelTo(now()->setDate(2026, 10, 11));
+        $item = $this->opportunity();
+        foreach ([null, '2026-02-31', '2026-10-12'] as $date) {
+            $this->withSession(['collaborations_authorized' => true])->patch(route('pipeline.update', $item), [
+                'pipeline_stage' => 'pagato', 'pipeline_outcome' => 'vinto', 'paid_at' => $date,
+            ])->assertSessionHasErrors('paid_at');
+        }
+        $this->assertSame(PipelineStage::Outbound, $item->fresh()->pipeline_stage);
+        $this->assertSame(1, $item->pipelineEvents()->count());
+    }
+
+    public function test_full_form_can_create_paid_opportunity_and_keep_dates_optional_for_contract(): void
+    {
+        $this->travelTo(now()->setDate(2026, 10, 11));
+        $this->withSession(['collaborations_authorized' => true])->post(route('collaborations.store'), [
+            'name' => 'Incasso sito', 'status' => 'forse', 'pipeline_stage' => 'pagato',
+            'pipeline_outcome' => 'in_corso', 'paid_at' => '2026-10-11', 'payment_deadline' => '2026-10-20',
+        ])->assertSessionHasNoErrors();
+        $this->assertDatabaseHas('collaborations', ['name' => 'Incasso sito', 'status' => 'pagato', 'pipeline_outcome' => 'vinto']);
+        $this->withSession(['collaborations_authorized' => true])->post(route('collaborations.store'), [
+            'name' => 'Non ancora incassato', 'status' => 'confermato', 'pipeline_stage' => 'contratto',
+            'pipeline_outcome' => 'in_corso', 'paid_at' => null,
+        ])->assertSessionHasNoErrors();
+        $this->assertDatabaseHas('collaborations', ['name' => 'Non ancora incassato', 'status' => 'confermato', 'paid_at' => null]);
+        $item = Collaboration::where('name', 'Incasso sito')->firstOrFail();
+        $this->withSession(['collaborations_authorized' => true])->get(route('collaborations.edit', $item))
+            ->assertOk()->assertSee('name="paid_at"', false)->assertSee('2026-10-11');
+    }
+
     public function test_pipeline_and_updates_require_access(): void
     {
         $item = $this->opportunity();

@@ -4,7 +4,7 @@
     <section class="hero-row pipeline-hero">
         <div>
             <p class="eyebrow">Sviluppo commerciale</p>
-            <h1>Dall’outbound al contratto</h1>
+        <h1>Dall’outbound all’incasso</h1>
             <p class="hero-subtitle">Tieni il filo di ogni opportunità, della prossima azione e dell’esito.</p>
         </div>
         <a class="button button-primary" href="{{ route('collaborations.create') }}">＋ Nuovo contatto</a>
@@ -44,8 +44,12 @@
                             @if ($item->contact_name)<p>{{ $item->contact_name }}</p>@endif
                             @if ($item->service)<p class="muted">{{ $item->service }}</p>@endif
                             @if ($item->demo_type)<p class="muted">{{ $item->demo_type }}{{ $item->demo_date ? ' · '.$item->demo_date->format('d/m/Y') : '' }}</p>@endif
-                            @if ($item->pipeline_stage === \App\Enums\PipelineStage::Contract)<p class="contract-label">{{ $item->contractType() }}</p>@endif
+                            @if (in_array($item->pipeline_stage, [\App\Enums\PipelineStage::Contract, \App\Enums\PipelineStage::Paid], true))<p class="contract-label">{{ $item->contractType() }}</p>@endif
                             <div class="opportunity-money"><span>{{ Number::currency((float) $item->monthly_revenue, in: 'EUR', locale: 'it') }} / mese</span><span>{{ Number::currency((float) $item->one_time_revenue, in: 'EUR', locale: 'it') }} una tantum</span></div>
+                            @if ($item->payment_deadline)
+                                <p class="follow-up-date {{ in_array($item->deadlineState(), ['overdue', 'today'], true) ? 'follow-up-due' : '' }}">Scadenza pagamento: {{ $item->payment_deadline->format('d/m/Y') }}{{ $item->deadlineState() === 'overdue' ? ' · Scaduto' : ($item->deadlineState() === 'today' ? ' · Oggi' : '') }}</p>
+                            @endif
+                            @if ($item->paid_at)<p class="contract-label">Incassato il {{ $item->paid_at->format('d/m/Y') }}</p>@endif
                             @if ($item->next_action)<p class="next-action">→ {{ $item->next_action }}</p>@endif
                             @if ($item->follow_up_date)
                                 <p class="follow-up-date {{ ! $item->pipeline_outcome->closed() && $item->follow_up_date->lte(today()) ? 'follow-up-due' : '' }}">Follow-up: {{ $item->follow_up_date->format('d/m/Y') }}{{ ! $item->pipeline_outcome->closed() && $item->follow_up_date->lte(today()) ? ' · Da gestire' : '' }}</p>
@@ -59,6 +63,10 @@
                                     <label for="move-outcome-{{ $item->id }}">Esito</label>
                                     <select id="move-outcome-{{ $item->id }}" name="pipeline_outcome">@foreach ($outcomes as $outcome)<option value="{{ $outcome->value }}" @selected($item->pipeline_outcome === $outcome)>{{ $outcome->label() }}</option>@endforeach</select>
                                     <label for="move-reason-{{ $item->id }}">Nota sul passaggio</label><textarea id="move-reason-{{ $item->id }}" name="outcome_reason" rows="2" maxlength="5000">{{ $item->outcome_reason }}</textarea>
+                                    <label for="move-deadline-{{ $item->id }}">Scadenza pagamento (opzionale)</label>
+                                    <input id="move-deadline-{{ $item->id }}" name="payment_deadline" type="date" value="{{ $item->payment_deadline?->format('Y-m-d') }}">
+                                    <label for="move-paid-{{ $item->id }}">Data incasso (richiesta per Pagato)</label>
+                                    <input id="move-paid-{{ $item->id }}" name="paid_at" type="date" max="{{ today()->format('Y-m-d') }}" value="{{ $item->paid_at?->format('Y-m-d') }}">
                                     <button class="button button-primary button-wide">Salva passaggio</button>
                                 </form>
                             </details>

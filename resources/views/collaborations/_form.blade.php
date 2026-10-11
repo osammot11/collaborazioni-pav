@@ -8,7 +8,7 @@
 <div class="form-grid">
     <div class="field field-wide pipeline-form-intro">
         <h2>Contatto e pipeline</h2>
-        <p class="muted">La fase indica dove sei arrivato; l’esito racconta come procede la trattativa. Un contratto viene segnato automaticamente come acquisito.</p>
+        <p class="muted">Contratto indica un accordo acquisito, non necessariamente incassato. Pagato indica l’incasso e richiede la data effettiva del pagamento.</p>
     </div>
     <div class="field">
         <label for="pipeline_stage">Fase commerciale</label>
@@ -79,6 +79,13 @@
         <label for="payment_deadline">Deadline di pagamento <small>Opzionale</small></label>
         <input id="payment_deadline" name="payment_deadline" type="date" value="{{ old('payment_deadline', $collaboration->payment_deadline?->format('Y-m-d')) }}" class="@error('payment_deadline') is-invalid @enderror">
         @error('payment_deadline')<p class="field-error">{{ $message }}</p>@enderror
+    </div>
+
+    <div class="field">
+        <label for="paid_at">Data effettiva del pagamento <small>Richiesta per Pagato</small></label>
+        <input id="paid_at" name="paid_at" type="date" max="{{ today()->format('Y-m-d') }}" value="{{ old('paid_at', $collaboration->paid_at?->format('Y-m-d')) }}">
+        <p class="muted">Data dell’incasso, distinta dalla scadenza prevista. Non è uno storico delle rate.</p>
+        @error('paid_at')<p class="field-error">{{ $message }}</p>@enderror
     </div>
 
     <div class="field field-wide">

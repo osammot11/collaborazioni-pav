@@ -70,7 +70,11 @@ class PipelineController extends Controller
 
     public function update(PipelineUpdateRequest $request, Collaboration $collaboration): RedirectResponse
     {
-        DB::transaction(fn () => $collaboration->update($request->validated()));
+        $data = $request->validated();
+        if ($data['pipeline_stage'] === PipelineStage::Paid->value) {
+            $data['status'] = 'pagato';
+        }
+        DB::transaction(fn () => $collaboration->update($data));
 
         return redirect()->route('pipeline')->with('success', 'Pipeline aggiornata.');
     }

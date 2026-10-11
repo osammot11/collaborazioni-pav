@@ -13,6 +13,7 @@ enum PipelineStage: string
     case Quote = 'preventivo_inviato';
     case Negotiation = 'negoziazione';
     case Contract = 'contratto';
+    case Paid = 'pagato';
 
     public function label(): string
     {
@@ -26,6 +27,7 @@ enum PipelineStage: string
             self::Quote => 'Preventivo inviato',
             self::Negotiation => 'Negoziazione',
             self::Contract => 'Contratto',
+            self::Paid => 'Pagato',
         };
     }
 }

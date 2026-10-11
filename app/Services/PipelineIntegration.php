@@ -15,7 +15,7 @@ use Illuminate\Validation\ValidationException;
 class PipelineIntegration
 {
     public const FIELDS = ['name', 'description', 'monthly_revenue', 'one_time_revenue', 'status',
-        'payment_deadline', 'notes', 'pipeline_stage', 'pipeline_outcome', 'category', 'contact_name',
+        'payment_deadline', 'paid_at', 'notes', 'pipeline_stage', 'pipeline_outcome', 'category', 'contact_name',
         'contact_email', 'service', 'demo_type', 'demo_date', 'next_action', 'follow_up_date', 'outcome_reason'];
 
     public function snapshot(Collaboration $item): array
@@ -24,7 +24,7 @@ class PipelineIntegration
         foreach (['pipeline_stage', 'pipeline_outcome', 'status'] as $field) {
             $fields[$field] = $item->$field->value;
         }
-        foreach (['payment_deadline', 'demo_date', 'follow_up_date'] as $field) {
+        foreach (['payment_deadline', 'paid_at', 'demo_date', 'follow_up_date'] as $field) {
             $fields[$field] = $item->$field?->format('Y-m-d');
         }
 
@@ -208,16 +208,22 @@ class PipelineIntegration
             $rules[$field] = 'nullable|string|max:255';
         }
         $rules['next_action'] = 'nullable|string|max:500';
+        $rules['paid_at'] = 'nullable|date_format:Y-m-d|before_or_equal:today';
         foreach (['payment_deadline', 'demo_date', 'follow_up_date'] as $field) {
             $rules[$field] = 'nullable|date_format:Y-m-d';
         }
         $data = Validator::make($fields, $rules)->validate();
         $stage = $data['pipeline_stage'] ?? $item->pipeline_stage->value;
         $outcome = $data['pipeline_outcome'] ?? $item->pipeline_outcome->value;
-        if ($stage === 'contratto') {
+        if (in_array($stage, ['contratto', 'pagato'], true)) {
             $data['pipeline_outcome'] = 'vinto';
         } elseif ($outcome === 'vinto') {
-            throw ValidationException::withMessages(['pipeline_outcome' => 'Lo stato vinto richiede la fase contratto.']);
+            throw ValidationException::withMessages(['pipeline_outcome' => 'Lo stato vinto richiede Contratto o Pagato.']);
+        }
+        if ($stage === 'pagato') {
+            Validator::make(['paid_at' => array_key_exists('paid_at', $data) ? $data['paid_at'] : $item->paid_at?->format('Y-m-d')],
+                ['paid_at' => 'required|date_format:Y-m-d|before_or_equal:today'])->validate();
+            $data['status'] = 'pagato';
         }
 
         return $data;

@@ -52,6 +52,9 @@ class CollaborationRequest extends FormRequest
             '*.decimal' => 'Usa al massimo due cifre decimali.',
             'status.*' => 'Seleziona una situazione valida.',
             'payment_deadline.date_format' => 'Inserisci una deadline valida.',
+            'paid_at.required' => 'Per la fase Pagato inserisci la data effettiva dell’incasso.',
+            'paid_at.date_format' => 'Inserisci una data di pagamento valida.',
+            'paid_at.before_or_equal' => 'La data effettiva del pagamento non può essere futura.',
         ];
     }
 

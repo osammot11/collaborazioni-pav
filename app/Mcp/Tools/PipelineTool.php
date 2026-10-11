@@ -68,9 +68,10 @@ abstract class PipelineTool extends Tool
                 $fields[$field]['description'] = 'Euro senza separatore delle migliaia, punto decimale, es. 1250.00. Minimo 0, massimo 9999999999.99.';
                 $fields[$field]['pattern'] = '^\\d{1,10}(\\.\\d{1,2})?$';
             }
-            foreach (['payment_deadline', 'demo_date', 'follow_up_date'] as $field) {
+            foreach (['payment_deadline', 'paid_at', 'demo_date', 'follow_up_date'] as $field) {
                 $fields[$field]['description'] = 'Data YYYY-MM-DD oppure null per rimuoverla.';
             }
+            $fields['paid_at']['description'] = 'Data effettiva dell’incasso YYYY-MM-DD, non futura. Obbligatoria per fase pagato; non inventarla. Null per rimuoverla solo fuori dalla fase pagato.';
             $properties['fields'] = ['type' => 'object', 'properties' => $fields, 'additionalProperties' => false,
                 'minProperties' => 1, 'required' => $this->action === 'create' ? ['name'] : []];
             $properties['request_id'] = ['type' => 'string', 'format' => 'uuid', 'description' => 'UUID idempotenza: stesso valore solo per ritentare identica operazione.'];
@@ -124,7 +125,8 @@ abstract class PipelineTool extends Tool
 
         return ['stages' => $map(PipelineStage::class), 'outcomes' => $map(PipelineOutcome::class),
             'payment_statuses' => $map(CollaborationStatus::class), 'currency' => 'EUR', 'dates' => 'YYYY-MM-DD',
-            'rules' => ['contratto implica vinto', 'fase/esito commerciale indipendenti dalla situazione del pagamento',
+            'rules' => ['contratto implica vinto, ma non implica pagamento', 'pagato implica vinto e situazione pagato; richiede paid_at non futura',
+                'payment_deadline è la scadenza prevista; paid_at è la data effettiva dell’incasso, non uno storico di rate',
                 'update preserva i campi omessi; null cancella un campo opzionale',
                 'delete è definitivo, richiede pipeline:delete, revisione, nome esatto e conferma esplicita dell’utente']];
     }
