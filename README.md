@@ -43,19 +43,21 @@ La suite copre accesso, rate limit, CRUD, validazione, importi in formato italia
 
 ## Pipeline commerciale
 
-La fase **Pagato**, dopo Contratto, distingue l’accordo acquisito dall’incasso. Contratto non segna automaticamente il pagamento; Pagato imposta esito Acquisito e situazione Pagato e richiede `paid_at` (data effettiva non futura). `payment_deadline` resta la scadenza prevista: entrambe le date sono modificabili dal form e direttamente dalle card e visibili sulla board. Le scadenze scadute/odierne sono evidenziate solo per situazioni ancora da gestire. Per gli abbonamenti queste date non costituiscono un registro di rate: rappresentano il pagamento annotato nella scheda.
+La pipeline usa **un solo stato**, senza esiti separati: Da contattare, Outbound inviato, Risposta ricevuta, Demo programmata, Demo svolta, Preventivo inviato, Negoziazione, Contratto, Pagato, Rimandato e Rifiutato. Da classificare resta disponibile per le vecchie schede. Rimandato indica progetti sospesi (con eventuale follow-up), Rifiutato quelli abortiti. Nessuno dei due elimina dati. Riaprendo una scheda sospesa/rifiutata, la situazione passa a Forse salvo una diversa scelta esplicita.
 
-La migrazione del 11/10/2026 aggiunge solo la data nullable: preserva tutti i dati e non inventa incassi né riclassifica automaticamente le schede esistenti. Impostare Pagato con la data reale per quelle già incassate. Il server MCP v1.2.0 espone il nuovo stato e `paid_at` negli strumenti esistenti; nessun nuovo scope OAuth. Dopo il deploy aggiornare i metadati del plugin. Sulla VPS, dopo backup SQLite e aggiornamento del codice: `php artisan optimize:clear`, `php artisan migrate --force`, `php artisan optimize`.
+**Contratto** distingue l’accordo acquisito dall’incasso: non segna automaticamente il pagamento. **Pagato** imposta la situazione Pagato e richiede `paid_at` (data effettiva non futura). `payment_deadline` resta la scadenza prevista. Le date sono visibili e modificabili dalle card e dal form. Per gli abbonamenti rappresentano il pagamento annotato, non uno storico delle rate.
 
-La pagina `/pipeline` organizza i contatti in fasi: Da contattare, Outbound inviato, Risposta ricevuta, Demo programmata, Demo svolta, Preventivo inviato, Negoziazione, Contratto e Pagato. Ogni opportunità mantiene un esito indipendente: In corso/interessato, In attesa, Forse, Senza risposta, Rifiutato/perso o Acquisito. Contratto e Pagato impostano automaticamente Acquisito. È possibile riaprire una trattativa cambiando fase ed esito.
+Gli aggiornamenti delle card, i filtri e la paginazione avvengono senza ricaricare la pagina, con messaggi di errore locali e mantenimento dello scorrimento. Anche creazione e modifica della scheda completa salvano senza navigazione. Senza JavaScript, i form tradizionali continuano a funzionare. Il server renderizza i frammenti Blade; nessun framework JavaScript o API pubblica aggiuntiva.
 
-Categoria, referente, email, servizio proposto, tipo e data demo, prossima azione e follow-up si gestiscono nel form. Le colonne permettono di cambiare fase/esito; tutti i passaggi vengono registrati nello storico della scheda. Il tipo di contratto è dedotto dagli importi: solo mensile = abbonamento, solo una tantum = una tantum, entrambi = ibrido.
+La migrazione del 12/10/2026 converte i precedenti esiti Perso/In attesa in Rifiutato/Rimandato, annotando il cambio nello storico e incrementando la revisione per invalidare letture MCP obsolete. Le vecchie colonne degli esiti restano solo per conservazione storica/compatibilità: non sono più campi pubblici, filtri o elementi dell’interfaccia. Il rollback non cancella la riclassificazione dei dati. Nessuna nota, data o importo viene eliminato; la migrazione del 11/10 aggiunge la data nullable senza inventare incassi.
 
-Gli esiti commerciali sono separati dalla precedente situazione accordo/pagamento. Il follow-up segnala le date da gestire nell’app; non invia email e non classifica automaticamente una mancata risposta.
+Categoria, referente, email, servizio proposto, demo, prossima azione, follow-up e nota sullo stato si gestiscono nel form. Tutti i passaggi di stato vengono registrati nello storico. Il tipo di contratto è dedotto dagli importi: solo mensile = abbonamento, solo una tantum = una tantum, entrambi = ibrido.
 
-Per aggiornare un’installazione esistente, eseguire un backup SQLite prima di `php artisan migrate --force`. La migrazione conserva i dati e associa Pagato/Confermato a Contratto acquisito; le altre situazioni restano Da classificare con un esito corrispondente. Lo storico annota l’importazione e le associazioni vanno verificate. Non vengono inventate date outbound o demo.
+La situazione accordo/pagamento resta per il riepilogo delle rendite, non è un esito commerciale. Il follow-up segnala le date da gestire per stati non chiusi; Contratto, Pagato e Rifiutato sono esclusi. Non invia email.
 
-La board mostra al massimo 30 schede per colonna; l’elenco paginato sottostante permette di accedere a tutte le opportunità. I filtri per categoria, fase, esito e follow-up valgono per entrambe le viste.
+Per aggiornare la VPS: backup SQLite, aggiornamento codice, `php artisan optimize:clear`, `php artisan migrate --force`, `php artisan optimize`. MCP v2.0.0 rimuove `pipeline_outcome` dai campi/snapshot, `outcome` dai filtri e `outcomes` dalle opzioni: aggiornare i metadati del plugin dopo il deploy. I permessi OAuth restano invariati.
+
+La board mostra al massimo 30 schede per colonna; l’elenco paginato dà accesso a tutte le opportunità. I filtri per categoria, stato e follow-up valgono per entrambe le viste.
 
 ## ChatGPT via MCP (senza Auth0)
 

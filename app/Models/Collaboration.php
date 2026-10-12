@@ -34,6 +34,7 @@ class Collaboration extends Model
 
     protected static function booted(): void
     {
+        static::saving(fn (self $collaboration) => $collaboration->normalizePipeline());
         static::updating(function (self $collaboration): void {
             $collaboration->revision = ((int) $collaboration->getRawOriginal('revision')) + 1;
         });
@@ -56,6 +57,24 @@ class Collaboration extends Model
                 ]);
             }
         });
+    }
+
+    public function normalizePipeline(): void
+    {
+        $this->pipeline_outcome = $this->pipeline_stage->legacyOutcome();
+        $payment = match ($this->pipeline_stage) {
+            PipelineStage::Paid => 'pagato',
+            PipelineStage::Refused => 'rifiutato',
+            PipelineStage::Postponed => 'rimandato',
+            default => null,
+        };
+        if ($payment) {
+            $this->status = $payment;
+        } elseif ($this->isDirty('pipeline_stage') && ! $this->isDirty('status')
+            && in_array($this->getRawOriginal('pipeline_stage'), ['rifiutato', 'rimandato'], true)
+            && in_array($this->status->value, ['rifiutato', 'rimandato'], true)) {
+            $this->status = 'forse';
+        }
     }
 
     public function pipelineEvents(): HasMany

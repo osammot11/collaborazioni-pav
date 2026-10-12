@@ -116,7 +116,7 @@ h2 { margin-bottom: 0; font-size: 1.35rem; }
     display: flex;
     align-items: center;
     justify-content: space-between;
-    width: min(1180px, calc(100% - 40px));
+    width: min(1600px, calc(100% - 40px));
     margin: 0 auto;
     padding: 24px 0;
 }
@@ -132,7 +132,7 @@ h2 { margin-bottom: 0; font-size: 1.35rem; }
 .header-actions { display: flex; align-items: center; gap: 8px; }
 .header-actions form { margin: 0; }
 
-.page-shell { width: min(1180px, calc(100% - 40px)); margin: 18px auto 80px; }
+.page-shell { width: min(1600px, calc(100% - 40px)); margin: 18px auto 80px; }
 .hero-row { display: flex; align-items: flex-end; justify-content: space-between; gap: 30px; margin: 38px 0 34px; }
 .hero-subtitle { max-width: 620px; margin-bottom: 0; color: var(--muted); font-size: 1.03rem; }
 .eyebrow { margin-bottom: 9px; color: var(--primary); font-size: 11px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; }
@@ -335,3 +335,13 @@ tbody tr:hover { background: #fbfcff; }
     .search-field, .filters .button-secondary { grid-column: auto; }
     .pagination-info { display: none; }
 }
+/* Keep asynchronous save feedback visible without moving the board. */
+[data-pipeline-feedback]:not([hidden]) {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    max-width: min(440px, calc(100vw - 48px));
+    z-index: 50;
+    box-shadow: 0 12px 36px rgb(31 41 55 / 15%);
+}
+[data-pipeline-update] [aria-invalid="true"] { border-color: #dc3545; }

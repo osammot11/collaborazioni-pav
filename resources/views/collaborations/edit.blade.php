@@ -10,7 +10,7 @@
         <p>Aggiorna rendite, situazione, deadline e dettagli.</p>
     </div>
 
-    <form method="POST" action="{{ route('collaborations.update', $collaboration) }}" class="form-card">
+    <form method="POST" action="{{ route('collaborations.update', $collaboration) }}" class="form-card" data-collaboration-form>
         @csrf
         @method('PUT')
         @include('collaborations._form', ['submitLabel' => 'Salva modifiche'])
@@ -23,7 +23,6 @@
             <article class="history-event">
                 <time>{{ $event->created_at->format('d/m/Y H:i') }}</time>
                 <strong>{{ $event->from_stage?->label() ?? 'Inizio' }} → {{ $event->to_stage->label() }}</strong>
-                <p>{{ $event->from_outcome?->label() ?? '—' }} → {{ $event->to_outcome->label() }}</p>
                 @if ($event->note)<p class="muted">{{ $event->note }}</p>@endif
             </article>
         @empty
@@ -32,3 +31,7 @@
         {{ $history->links('components.pagination') }}
     </section>
 @endsection
+
+@push('scripts')
+<script src="{{ asset('js/collaboration-form.js') }}?v={{ filemtime(public_path('js/collaboration-form.js')) }}" defer></script>
+@endpush

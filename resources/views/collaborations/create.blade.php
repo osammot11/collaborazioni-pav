@@ -10,8 +10,12 @@
         <p>Inserisci i dati essenziali. Potrai modificarli in qualsiasi momento.</p>
     </div>
 
-    <form method="POST" action="{{ route('collaborations.store') }}" class="form-card">
+    <form method="POST" action="{{ route('collaborations.store') }}" class="form-card" data-collaboration-form>
         @csrf
         @include('collaborations._form', ['submitLabel' => 'Salva collaborazione'])
     </form>
 @endsection
+
+@push('scripts')
+<script src="{{ asset('js/collaboration-form.js') }}?v={{ filemtime(public_path('js/collaboration-form.js')) }}" defer></script>
+@endpush

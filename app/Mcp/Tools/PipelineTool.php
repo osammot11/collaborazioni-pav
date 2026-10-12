@@ -3,7 +3,6 @@
 namespace App\Mcp\Tools;
 
 use App\Enums\CollaborationStatus;
-use App\Enums\PipelineOutcome;
 use App\Enums\PipelineStage;
 use App\Http\Controllers\OAuthDiscoveryController;
 use App\Services\PipelineIntegration;
@@ -41,7 +40,6 @@ abstract class PipelineTool extends Tool
         if ($this->action === 'search') {
             $properties = ['query' => $string, 'category' => $string,
                 'stage' => ['type' => 'string', 'enum' => array_column(PipelineStage::cases(), 'value')],
-                'outcome' => ['type' => 'string', 'enum' => array_column(PipelineOutcome::cases(), 'value')],
                 'follow_up' => ['type' => 'string', 'enum' => ['overdue', 'today', 'upcoming', 'none']],
                 'page' => $integer, 'per_page' => [...$integer, 'maximum' => 50]];
         }
@@ -59,9 +57,9 @@ abstract class PipelineTool extends Tool
         if (in_array($this->action, ['create', 'update'], true)) {
             $fields = [];
             foreach (PipelineIntegration::FIELDS as $field) {
-                $fields[$field] = ['type' => in_array($field, ['name', 'status', 'pipeline_stage', 'pipeline_outcome', 'monthly_revenue', 'one_time_revenue']) ? 'string' : ['string', 'null']];
+                $fields[$field] = ['type' => in_array($field, ['name', 'status', 'pipeline_stage', 'monthly_revenue', 'one_time_revenue']) ? 'string' : ['string', 'null']];
             }
-            foreach (['pipeline_stage' => PipelineStage::class, 'pipeline_outcome' => PipelineOutcome::class, 'status' => CollaborationStatus::class] as $field => $enum) {
+            foreach (['pipeline_stage' => PipelineStage::class, 'status' => CollaborationStatus::class] as $field => $enum) {
                 $fields[$field]['enum'] = array_column($enum::cases(), 'value');
             }
             foreach (['monthly_revenue', 'one_time_revenue'] as $field) {
@@ -123,9 +121,11 @@ abstract class PipelineTool extends Tool
     {
         $map = fn ($enum) => array_map(fn ($case) => ['value' => $case->value, 'label' => $case->label()], $enum::cases());
 
-        return ['stages' => $map(PipelineStage::class), 'outcomes' => $map(PipelineOutcome::class),
+        return ['stages' => $map(PipelineStage::class),
             'payment_statuses' => $map(CollaborationStatus::class), 'currency' => 'EUR', 'dates' => 'YYYY-MM-DD',
-            'rules' => ['contratto implica vinto, ma non implica pagamento', 'pagato implica vinto e situazione pagato; richiede paid_at non futura',
+            'rules' => ['Un solo stato pipeline_stage: nessun esito separato. Contratto non implica pagamento', 'pagato imposta situazione pagato; richiede paid_at non futura',
+                'rifiutato e rimandato impostano la corrispondente situazione; conservano dati e storico',
+                'riaprire da rifiutato/rimandato ripristina situazione forse salvo una diversa situazione esplicita',
                 'payment_deadline è la scadenza prevista; paid_at è la data effettiva dell’incasso, non uno storico di rate',
                 'update preserva i campi omessi; null cancella un campo opzionale',
                 'delete è definitivo, richiede pipeline:delete, revisione, nome esatto e conferma esplicita dell’utente']];

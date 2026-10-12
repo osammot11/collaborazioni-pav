@@ -2,10 +2,10 @@
 
 namespace App\Http\Controllers;
 
-use App\Enums\PipelineOutcome;
 use App\Enums\PipelineStage;
 use App\Http\Requests\PipelineUpdateRequest;
 use App\Models\Collaboration;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -14,12 +14,11 @@ use Illuminate\View\View;
 
 class PipelineController extends Controller
 {
-    public function index(Request $request): View
+    public function index(Request $request): View|JsonResponse
     {
         $filters = $request->validate([
             'search' => ['nullable', 'string', 'max:255'],
             'category' => ['nullable', 'string', 'max:255'],
-            'outcome' => ['nullable', Rule::enum(PipelineOutcome::class)],
             'stage' => ['nullable', Rule::enum(PipelineStage::class)],
             'follow_up' => ['nullable', 'in:due,upcoming,none'],
         ]);
@@ -32,7 +31,7 @@ class PipelineController extends Controller
                 }
             });
         }
-        foreach (['category' => 'category', 'outcome' => 'pipeline_outcome', 'stage' => 'pipeline_stage'] as $filter => $column) {
+        foreach (['category' => 'category', 'stage' => 'pipeline_stage'] as $filter => $column) {
             if (! empty($filters[$filter])) {
                 $query->where($column, $filters[$filter]);
             }
@@ -41,7 +40,7 @@ class PipelineController extends Controller
             if ($followUp === 'none') {
                 $query->whereNull('follow_up_date');
             } else {
-                $query->whereNotIn('pipeline_outcome', ['perso', 'vinto'])
+                $query->whereNotIn('pipeline_stage', PipelineStage::closedValues())
                     ->whereDate('follow_up_date', $followUp === 'due' ? '<=' : '>', today());
             }
         }
@@ -57,24 +56,28 @@ class PipelineController extends Controller
             ]];
         });
 
-        return view('pipeline.index', [
+        $view = view('pipeline.index', [
             'columns' => $columns,
             'stages' => PipelineStage::cases(),
-            'outcomes' => PipelineOutcome::cases(),
             'filters' => $filters,
             'categories' => Collaboration::whereNotNull('category')->distinct()->orderBy('category')->pluck('category'),
-            'results' => (clone $query)->orderByRaw('follow_up_date IS NULL')->orderBy('follow_up_date')->latest('id')->paginate(24)->withQueryString(),
-            'dueCount' => Collaboration::whereNotIn('pipeline_outcome', ['perso', 'vinto'])->whereDate('follow_up_date', '<=', today())->count(),
+            'results' => (clone $query)->orderByRaw('follow_up_date IS NULL')->orderBy('follow_up_date')->latest('id')->paginate(24)->withPath(route('pipeline'))->appends($filters),
+            'dueCount' => Collaboration::whereNotIn('pipeline_stage', PipelineStage::closedValues())->whereDate('follow_up_date', '<=', today())->count(),
         ]);
+
+        return $request->expectsJson() ? response()->json(['html' => $view->render()]) : $view;
     }
 
-    public function update(PipelineUpdateRequest $request, Collaboration $collaboration): RedirectResponse
+    public function update(PipelineUpdateRequest $request, Collaboration $collaboration): RedirectResponse|JsonResponse
     {
         $data = $request->validated();
-        if ($data['pipeline_stage'] === PipelineStage::Paid->value) {
-            $data['status'] = 'pagato';
-        }
         DB::transaction(fn () => $collaboration->update($data));
+
+        if ($request->expectsJson()) {
+            $filters = Request::create(route('pipeline').($request->getQueryString() ? '?'.$request->getQueryString() : ''), 'GET');
+
+            return response()->json(['message' => 'Pipeline aggiornata.', 'html' => $this->index($filters)->render()]);
+        }
 
         return redirect()->route('pipeline')->with('success', 'Pipeline aggiornata.');
     }

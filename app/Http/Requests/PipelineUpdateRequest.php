@@ -23,7 +23,6 @@ class PipelineUpdateRequest extends FormRequest
     {
         $rules = $this->pipelineRules();
         $rules['pipeline_stage'][0] = 'required';
-        $rules['pipeline_outcome'][0] = 'required';
 
         return $rules;
     }

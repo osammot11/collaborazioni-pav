@@ -6,6 +6,7 @@ use App\Enums\CollaborationStatus;
 use App\Http\Requests\CollaborationRequest;
 use App\Models\Collaboration;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -84,9 +85,13 @@ class CollaborationController extends Controller
         ]);
     }
 
-    public function store(CollaborationRequest $request): RedirectResponse
+    public function store(CollaborationRequest $request): RedirectResponse|JsonResponse
     {
-        DB::transaction(fn () => Collaboration::create($request->validated()));
+        $collaboration = DB::transaction(fn () => Collaboration::create($request->validated()));
+        if ($request->expectsJson()) {
+            return response()->json(['message' => 'Collaborazione aggiunta con successo.',
+                'url' => route('collaborations.edit', $collaboration), 'html' => $this->edit($collaboration)->render()], 201);
+        }
 
         return redirect()->route('dashboard')->with('success', 'Collaborazione aggiunta con successo.');
     }
@@ -99,9 +104,14 @@ class CollaborationController extends Controller
         ]);
     }
 
-    public function update(CollaborationRequest $request, Collaboration $collaboration): RedirectResponse
+    public function update(CollaborationRequest $request, Collaboration $collaboration): RedirectResponse|JsonResponse
     {
         DB::transaction(fn () => $collaboration->update($request->validated()));
+
+        if ($request->expectsJson()) {
+            return response()->json(['message' => 'Collaborazione aggiornata.',
+                'url' => route('collaborations.edit', $collaboration), 'html' => $this->edit($collaboration)->render()]);
+        }
 
         return redirect()->route('dashboard')->with('success', 'Collaborazione aggiornata.');
     }

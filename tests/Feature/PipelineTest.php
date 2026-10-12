@@ -29,6 +29,106 @@ class PipelineTest extends TestCase
             ->assertSee('aria-controls="pipeline-board"', false)->assertSee('js/pipeline.js');
     }
 
+    public function test_full_form_create_and_update_support_async_save_with_validation(): void
+    {
+        $created = $this->withSession(['collaborations_authorized' => true])->postJson(route('collaborations.store'), [
+            'name' => 'Scheda asincrona', 'pipeline_stage' => 'rimandato', 'status' => 'forse',
+        ])->assertCreated()->assertJsonStructure(['html', 'url', 'message']);
+        $item = Collaboration::where('name', 'Scheda asincrona')->firstOrFail();
+        $this->assertSame(route('collaborations.edit', $item), $created->json('url'));
+        $this->assertStringContainsString('data-collaboration-form', $created->json('html'));
+        $this->withSession(['collaborations_authorized' => true])->putJson(route('collaborations.update', $item), [
+            'name' => 'Scheda aggiornata', 'pipeline_stage' => 'contratto', 'status' => 'confermato',
+        ])->assertOk()->assertJsonStructure(['html', 'url', 'message']);
+        $this->assertSame('Scheda aggiornata', $item->fresh()->name);
+        $this->withSession(['collaborations_authorized' => true])->putJson(route('collaborations.update', $item), [
+            'name' => '', 'pipeline_stage' => 'pagato', 'status' => 'pagato',
+        ])->assertUnprocessable()->assertJsonValidationErrors(['name', 'paid_at']);
+    }
+
+    public function test_async_update_and_filters_return_fresh_html_without_redirect_and_without_outcomes(): void
+    {
+        $item = $this->opportunity(['category' => 'Hotel']);
+        $response = $this->withSession(['collaborations_authorized' => true])->patchJson(
+            route('pipeline.update', $item).'?category=Hotel', [
+                'pipeline_stage' => 'rimandato', 'follow_up_date' => today()->addWeek()->format('Y-m-d'),
+            ])->assertOk()->assertJsonPath('message', 'Pipeline aggiornata.');
+        $this->assertStringContainsString('data-stage="rimandato"', $response->json('html'));
+        $this->assertStringContainsString('Demo cliente', $response->json('html'));
+        $this->assertStringNotContainsString('name="pipeline_outcome"', $response->json('html'));
+        $this->assertSame(PipelineStage::Postponed, $item->fresh()->pipeline_stage);
+        $this->assertSame('rimandato', $item->fresh()->status->value);
+        $this->withSession(['collaborations_authorized' => true])->getJson(route('pipeline', ['stage' => 'rimandato']))
+            ->assertOk()->assertJsonStructure(['html']);
+        $this->withSession(['collaborations_authorized' => true])->get(route('collaborations.edit', $item))
+            ->assertDontSee('Esito commerciale')->assertDontSee('name="pipeline_outcome"', false);
+        $this->withSession(['collaborations_authorized' => true])->patchJson(route('pipeline.update', $item), [
+            'pipeline_stage' => 'pagato',
+        ])->assertUnprocessable()->assertJsonValidationErrors('paid_at');
+        $this->assertSame(PipelineStage::Postponed, $item->fresh()->pipeline_stage);
+        $this->withSession(['collaborations_authorized' => true])->patchJson(route('pipeline.update', $item), [
+            'pipeline_stage' => 'negoziazione',
+        ])->assertOk();
+        $this->assertSame('forse', $item->fresh()->status->value);
+    }
+
+    public function test_simplification_migration_converts_legacy_outcomes_preserving_history_and_dates(): void
+    {
+        $lost = $this->opportunity(['notes' => 'Non cancellare', 'payment_deadline' => '2026-12-10']);
+        $waiting = $this->opportunity();
+        // Simulate data written by the old application, before state normalization.
+        DB::table('collaborations')->where('id', $lost->id)->update(['pipeline_outcome' => 'perso']);
+        DB::table('collaborations')->where('id', $waiting->id)->update(['pipeline_outcome' => 'in_attesa']);
+        $migration = require database_path('migrations/2026_10_12_000000_simplify_pipeline_states.php');
+        $migration->up();
+        $this->assertSame(PipelineStage::Refused, $lost->fresh()->pipeline_stage);
+        $this->assertSame(PipelineStage::Postponed, $waiting->fresh()->pipeline_stage);
+        $this->assertSame('Non cancellare', $lost->fresh()->notes);
+        $this->assertSame('2026-12-10', $lost->fresh()->payment_deadline->format('Y-m-d'));
+        $this->assertSame(2, $lost->fresh()->revision);
+        $this->assertSame(2, $lost->pipelineEvents()->count());
+        $migration->up();
+        $this->assertSame(2, $lost->pipelineEvents()->count());
+    }
+
+    public function test_refused_stage_closes_opportunity_preserves_data_and_can_be_reopened(): void
+    {
+        $item = $this->opportunity(['pipeline_stage' => 'contratto', 'pipeline_outcome' => 'vinto',
+            'status' => 'confermato', 'notes' => 'Da conservare', 'payment_deadline' => today()->subDay(),
+            'follow_up_date' => today()->subDay()]);
+        $this->withSession(['collaborations_authorized' => true])->patch(route('pipeline.update', $item), [
+            'pipeline_stage' => 'rifiutato', 'pipeline_outcome' => 'vinto', 'outcome_reason' => 'Progetto abortito',
+        ])->assertSessionHasNoErrors();
+        $item->refresh();
+        $this->assertSame(PipelineStage::Refused, $item->pipeline_stage);
+        $this->assertSame(PipelineOutcome::Lost, $item->pipeline_outcome);
+        $this->assertSame('rifiutato', $item->status->value);
+        $this->assertNull($item->deadlineState());
+        $this->assertSame('500.00', $item->monthly_revenue);
+        $this->assertSame('Da conservare', $item->notes);
+        $this->assertSame(PipelineStage::Contract, $item->pipelineEvents()->first()->from_stage);
+        $this->assertSame(PipelineStage::Refused, $item->pipelineEvents()->first()->to_stage);
+        $this->withSession(['collaborations_authorized' => true])->get(route('pipeline', ['stage' => 'rifiutato']))
+            ->assertOk()->assertSee('Demo cliente')->assertSee('Rifiutato')->assertViewHas('dueCount', 0);
+        $this->withSession(['collaborations_authorized' => true])->get(route('pipeline', ['follow_up' => 'due']))
+            ->assertDontSee('Demo cliente');
+        $this->withSession(['collaborations_authorized' => true])->patch(route('pipeline.update', $item), [
+            'pipeline_stage' => 'negoziazione', 'pipeline_outcome' => 'in_corso',
+        ])->assertSessionHasNoErrors();
+        $this->assertSame('forse', $item->fresh()->status->value);
+        $this->assertSame(PipelineOutcome::Active, $item->fresh()->pipeline_outcome);
+    }
+
+    public function test_full_form_can_create_a_refused_project(): void
+    {
+        $this->withSession(['collaborations_authorized' => true])->post(route('collaborations.store'), [
+            'name' => 'Progetto abortito', 'status' => 'forse', 'pipeline_stage' => 'rifiutato',
+            'pipeline_outcome' => 'in_corso', 'outcome_reason' => 'Budget non approvato',
+        ])->assertSessionHasNoErrors();
+        $this->assertDatabaseHas('collaborations', ['name' => 'Progetto abortito',
+            'pipeline_stage' => 'rifiutato', 'pipeline_outcome' => 'perso', 'status' => 'rifiutato']);
+    }
+
     public function test_paid_stage_records_actual_date_and_payment_status_without_changing_deadline(): void
     {
         $this->travelTo(now()->setDate(2026, 10, 11));
@@ -92,7 +192,7 @@ class PipelineTest extends TestCase
         $this->assertSame(PipelineStage::Outbound, $item->fresh()->pipeline_stage);
     }
 
-    public function test_stage_and_outcome_changes_preserve_revenue_status_and_record_history(): void
+    public function test_stage_changes_preserve_revenue_status_and_record_history(): void
     {
         $item = $this->opportunity();
         $this->withSession(['collaborations_authorized' => true])->patch(route('pipeline.update', $item), [
@@ -106,7 +206,7 @@ class PipelineTest extends TestCase
         $event = $item->pipelineEvents()->first();
         $this->assertSame(PipelineStage::Outbound, $event->from_stage);
         $this->assertSame(PipelineStage::Quote, $event->to_stage);
-        $this->assertSame(PipelineOutcome::NoResponse, $event->to_outcome);
+        $this->assertSame(PipelineOutcome::Active, $event->to_outcome);
         $this->assertSame('Nessuna risposta al preventivo', $event->note);
         $this->assertSame(2, $item->pipelineEvents()->count());
 
@@ -137,17 +237,17 @@ class PipelineTest extends TestCase
         $this->withSession(['collaborations_authorized' => true])->patch(route('pipeline.update', $item), [
             'pipeline_stage' => 'non_valido', 'pipeline_outcome' => 'vinto',
             'contact_email' => 'email errata', 'follow_up_date' => '2026-02-31',
-        ])->assertSessionHasErrors(['pipeline_stage', 'pipeline_outcome', 'contact_email', 'follow_up_date']);
+        ])->assertSessionHasErrors(['pipeline_stage', 'contact_email', 'follow_up_date']);
         $this->assertSame(1, $item->pipelineEvents()->count());
     }
 
-    public function test_full_form_requires_outcome_when_changing_stage(): void
+    public function test_full_form_does_not_require_an_outcome_when_changing_stage(): void
     {
         $item = $this->opportunity();
         $this->withSession(['collaborations_authorized' => true])->put(route('collaborations.update', $item), [
             'name' => $item->name, 'status' => 'forse', 'pipeline_stage' => 'demo_svolta',
-        ])->assertSessionHasErrors('pipeline_outcome');
-        $this->assertSame(PipelineStage::Outbound, $item->fresh()->pipeline_stage);
+        ])->assertSessionHasNoErrors();
+        $this->assertSame(PipelineStage::DemoDone, $item->fresh()->pipeline_stage);
     }
 
     public function test_board_filters_and_due_followups_exclude_closed_opportunities(): void

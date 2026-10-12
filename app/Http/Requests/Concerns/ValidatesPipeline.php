@@ -2,7 +2,6 @@
 
 namespace App\Http\Requests\Concerns;
 
-use App\Enums\PipelineOutcome;
 use App\Enums\PipelineStage;
 use Illuminate\Validation\Rule;
 
@@ -12,12 +11,6 @@ trait ValidatesPipeline
     {
         return [
             'pipeline_stage' => ['sometimes', 'required', Rule::enum(PipelineStage::class)],
-            'pipeline_outcome' => ['required_with:pipeline_stage', Rule::enum(PipelineOutcome::class), function ($attribute, $value, $fail) {
-                $stage = $this->input('pipeline_stage', $this->route('collaboration')?->pipeline_stage?->value);
-                if ($value === PipelineOutcome::Won->value && ! in_array($stage, ['contratto', 'pagato'], true)) {
-                    $fail('Per segnare un’opportunità acquisita, seleziona Contratto o Pagato.');
-                }
-            }],
             'category' => ['nullable', 'string', 'max:255'],
             'contact_name' => ['nullable', 'string', 'max:255'],
             'contact_email' => ['nullable', 'email', 'max:255'],
@@ -35,8 +28,11 @@ trait ValidatesPipeline
     protected function preparePipeline(): void
     {
         $stage = $this->input('pipeline_stage', $this->route('collaboration')?->pipeline_stage?->value);
-        if (in_array($stage, ['contratto', 'pagato'], true)) {
-            $this->merge(['pipeline_outcome' => PipelineOutcome::Won->value]);
+        if ($stage === PipelineStage::Refused->value) {
+            $this->merge(['status' => 'rifiutato']);
+        }
+        if ($stage === PipelineStage::Postponed->value) {
+            $this->merge(['status' => 'rimandato']);
         }
         if ($stage === PipelineStage::Paid->value) {
             $this->merge(['status' => 'pagato']);

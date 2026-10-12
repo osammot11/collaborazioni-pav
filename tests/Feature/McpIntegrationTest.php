@@ -102,6 +102,53 @@ class McpIntegrationTest extends TestCase
         $this->withSession(['collaborations_authorized' => true])->get('/integrazioni')->assertRedirect('/login');
     }
 
+    public function test_mcp_uses_one_state_without_outcome_fields_or_filters(): void
+    {
+        $token = $this->credentials()['access_token'];
+        $response = $this->rpc('create_opportunity', ['request_id' => (string) Str::uuid(),
+            'fields' => ['name' => 'Da riprendere', 'pipeline_stage' => 'rimandato', 'follow_up_date' => today()->format('Y-m-d')]], $token)
+            ->assertJsonPath('result.structuredContent.opportunity.pipeline_stage', 'rimandato')
+            ->assertJsonPath('result.structuredContent.opportunity.status', 'rimandato');
+        $this->assertArrayNotHasKey('pipeline_outcome', $response->json('result.structuredContent.opportunity'));
+        $id = $response->json('result.structuredContent.opportunity.id');
+        $this->rpc('search_opportunities', ['stage' => 'rimandato', 'follow_up' => 'today'], $token)
+            ->assertJsonPath('result.structuredContent.total', 1);
+        $tools = $this->postJson('/mcp', ['jsonrpc' => '2.0', 'id' => 1, 'method' => 'tools/list'])->json('result.tools');
+        $this->assertArrayNotHasKey('pipeline_outcome', $tools[3]['inputSchema']['properties']['fields']['properties']);
+        $this->assertArrayNotHasKey('outcome', $tools[1]['inputSchema']['properties']);
+        $this->rpc('update_opportunity', ['id' => $id, 'expected_revision' => 1, 'request_id' => (string) Str::uuid(),
+            'fields' => ['pipeline_stage' => 'contratto']], $token)
+            ->assertJsonPath('result.structuredContent.opportunity.pipeline_stage', 'contratto');
+        $this->rpc('search_opportunities', ['follow_up' => 'today'], $token)->assertJsonPath('result.structuredContent.total', 0);
+        $this->assertArrayNotHasKey('outcomes', $this->rpc('pipeline_options', [], $token)->json('result.structuredContent'));
+    }
+
+    public function test_mcp_refused_stage_preserves_record_and_supports_reopening(): void
+    {
+        $token = $this->credentials()['access_token'];
+        $created = $this->rpc('create_opportunity', ['request_id' => (string) Str::uuid(),
+            'fields' => ['name' => 'Progetto abortito', 'pipeline_stage' => 'contratto', 'notes' => 'Contesto']], $token)
+            ->assertJsonPath('result.isError', false);
+        $id = $created->json('result.structuredContent.opportunity.id');
+        $this->rpc('update_opportunity', ['id' => $id, 'expected_revision' => 1, 'request_id' => (string) Str::uuid(),
+            'fields' => ['pipeline_stage' => 'rifiutato']], $token)
+            ->assertJsonPath('result.structuredContent.opportunity.pipeline_stage', 'rifiutato')
+            ->assertJsonPath('result.structuredContent.opportunity.status', 'rifiutato')
+            ->assertJsonPath('result.structuredContent.opportunity.notes', 'Contesto');
+        $this->rpc('search_opportunities', ['stage' => 'rifiutato'], $token)
+            ->assertJsonPath('result.structuredContent.total', 1);
+        $this->rpc('update_opportunity', ['id' => $id, 'expected_revision' => 2, 'request_id' => (string) Str::uuid(),
+            'fields' => ['notes' => 'Contesto aggiornato', 'status' => 'forse']], $token)
+            ->assertJsonPath('result.structuredContent.opportunity.status', 'rifiutato');
+        $this->rpc('update_opportunity', ['id' => $id, 'expected_revision' => 3, 'request_id' => (string) Str::uuid(),
+            'fields' => ['pipeline_stage' => 'negoziazione']], $token)
+            ->assertJsonPath('result.structuredContent.opportunity.status', 'forse');
+        $this->assertDatabaseCount('collaborations', 1);
+        $this->assertDatabaseCount('pipeline_events', 3);
+        $tools = $this->postJson('/mcp', ['jsonrpc' => '2.0', 'id' => 1, 'method' => 'tools/list'])->json('result.tools');
+        $this->assertContains('rifiutato', $tools[3]['inputSchema']['properties']['fields']['properties']['pipeline_stage']['enum']);
+    }
+
     public function test_mcp_can_record_payment_dates_and_requires_actual_date_for_paid_stage(): void
     {
         $this->travelTo(now()->setDate(2026, 10, 11));
@@ -118,7 +165,7 @@ class McpIntegrationTest extends TestCase
             'fields' => ['pipeline_stage' => 'pagato', 'paid_at' => '2026-10-10', 'status' => 'forse']], $token)
             ->assertJsonPath('result.structuredContent.opportunity.paid_at', '2026-10-10')
             ->assertJsonPath('result.structuredContent.opportunity.status', 'pagato')
-            ->assertJsonPath('result.structuredContent.opportunity.pipeline_outcome', 'vinto')
+            ->assertJsonPath('result.structuredContent.opportunity.pipeline_stage', 'pagato')
             ->assertJsonPath('result.structuredContent.opportunity.payment_deadline', '2026-10-05');
         $this->rpc('update_opportunity', ['id' => $id, 'expected_revision' => 2, 'request_id' => (string) Str::uuid(),
             'fields' => ['notes' => 'Pagamento ricevuto']], $token)
@@ -158,7 +205,7 @@ class McpIntegrationTest extends TestCase
         $update = ['id' => $id, 'expected_revision' => 1, 'request_id' => (string) Str::uuid(),
             'fields' => ['pipeline_stage' => 'contratto', 'follow_up_date' => null]];
         $this->rpc('update_opportunity', $update, $token)->assertJsonPath('result.structuredContent.opportunity.revision', 2)
-            ->assertJsonPath('result.structuredContent.opportunity.pipeline_outcome', 'vinto');
+            ->assertJsonPath('result.structuredContent.opportunity.pipeline_stage', 'contratto');
         $this->assertSame('Nota originale', Collaboration::find($id)->notes);
         $this->assertSame('250.00', Collaboration::find($id)->monthly_revenue);
         $this->assertNull(Collaboration::find($id)->follow_up_date);

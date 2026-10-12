@@ -3,7 +3,6 @@
 namespace App\Services;
 
 use App\Enums\CollaborationStatus;
-use App\Enums\PipelineOutcome;
 use App\Enums\PipelineStage;
 use App\Models\Collaboration;
 use App\Models\User;
@@ -15,13 +14,13 @@ use Illuminate\Validation\ValidationException;
 class PipelineIntegration
 {
     public const FIELDS = ['name', 'description', 'monthly_revenue', 'one_time_revenue', 'status',
-        'payment_deadline', 'paid_at', 'notes', 'pipeline_stage', 'pipeline_outcome', 'category', 'contact_name',
+        'payment_deadline', 'paid_at', 'notes', 'pipeline_stage', 'category', 'contact_name',
         'contact_email', 'service', 'demo_type', 'demo_date', 'next_action', 'follow_up_date', 'outcome_reason'];
 
     public function snapshot(Collaboration $item): array
     {
         $fields = $item->only(self::FIELDS);
-        foreach (['pipeline_stage', 'pipeline_outcome', 'status'] as $field) {
+        foreach (['pipeline_stage', 'status'] as $field) {
             $fields[$field] = $item->$field->value;
         }
         foreach (['payment_deadline', 'paid_at', 'demo_date', 'follow_up_date'] as $field) {
@@ -37,7 +36,7 @@ class PipelineIntegration
         $data = Validator::make($input, [
             'query' => 'sometimes|string|max:255', 'category' => 'sometimes|string|max:255',
             'stage' => ['sometimes', Rule::enum(PipelineStage::class)],
-            'outcome' => ['sometimes', Rule::enum(PipelineOutcome::class)],
+            'outcome' => ['prohibited'],
             'follow_up' => ['sometimes', Rule::in(['overdue', 'today', 'upcoming', 'none'])],
             'page' => 'sometimes|integer|min:1', 'per_page' => 'sometimes|integer|min:1|max:50',
         ])->validate();
@@ -49,7 +48,7 @@ class PipelineIntegration
                 }
             });
         }
-        foreach (['category' => 'category', 'stage' => 'pipeline_stage', 'outcome' => 'pipeline_outcome'] as $param => $field) {
+        foreach (['category' => 'category', 'stage' => 'pipeline_stage'] as $param => $field) {
             if (isset($data[$param])) {
                 $query->where($field, $data[$param]);
             }
@@ -58,7 +57,7 @@ class PipelineIntegration
             if ($data['follow_up'] === 'none') {
                 $query->whereNull('follow_up_date');
             } else {
-                $query->whereNotIn('pipeline_outcome', ['vinto', 'perso'])->whereDate('follow_up_date',
+                $query->whereNotIn('pipeline_stage', PipelineStage::closedValues())->whereDate('follow_up_date',
                     match ($data['follow_up']) {
                         'overdue' => '<', 'today' => '=', default => '>'
                     }, today());
@@ -74,7 +73,8 @@ class PipelineIntegration
     {
         $item = Collaboration::findOrFail($id);
 
-        return ['opportunity' => $this->snapshot($item), 'history' => $item->pipelineEvents()->limit(50)->get()->toArray()];
+        return ['opportunity' => $this->snapshot($item), 'history' => $item->pipelineEvents()->limit(50)->get()
+            ->map(fn ($event) => $event->only(['id', 'from_stage', 'to_stage', 'note', 'created_at']))->all()];
     }
 
     public function write(string $action, array $input, User $user): array
@@ -111,7 +111,9 @@ class PipelineIntegration
                 $item->fill(['monthly_revenue' => '0.00', 'one_time_revenue' => '0.00', 'status' => 'forse', ...$fields]);
                 $item->save();
             } else {
+                $previousOutcome = $item->getRawOriginal('pipeline_outcome');
                 $item->fill($fields);
+                $item->normalizePipeline();
                 $dirty = $item->getDirty();
                 $changed = $item->isDirty(['pipeline_stage', 'pipeline_outcome']);
                 // Atomic compare-and-swap also protects against changes from the web UI.
@@ -125,7 +127,7 @@ class PipelineIntegration
                 if ($changed) {
                     $item->pipelineEvents()->create([
                         'from_stage' => $before['pipeline_stage'], 'to_stage' => $item->pipeline_stage,
-                        'from_outcome' => $before['pipeline_outcome'], 'to_outcome' => $item->pipeline_outcome,
+                        'from_outcome' => $previousOutcome, 'to_outcome' => $item->pipeline_outcome,
                         'note' => $item->outcome_reason,
                     ]);
                 }
@@ -198,7 +200,6 @@ class PipelineIntegration
             'one_time_revenue' => ['sometimes', 'required', 'string', 'regex:/^\\d{1,10}(\\.\\d{1,2})?$/D', 'numeric', 'min:0', 'max:9999999999.99'],
             'status' => ['sometimes', 'required', Rule::enum(CollaborationStatus::class)],
             'pipeline_stage' => ['sometimes', 'required', Rule::enum(PipelineStage::class)],
-            'pipeline_outcome' => ['sometimes', 'required', Rule::enum(PipelineOutcome::class)],
             'contact_email' => 'nullable|email|max:255',
         ];
         foreach (['description', 'notes', 'outcome_reason'] as $field) {
@@ -214,12 +215,6 @@ class PipelineIntegration
         }
         $data = Validator::make($fields, $rules)->validate();
         $stage = $data['pipeline_stage'] ?? $item->pipeline_stage->value;
-        $outcome = $data['pipeline_outcome'] ?? $item->pipeline_outcome->value;
-        if (in_array($stage, ['contratto', 'pagato'], true)) {
-            $data['pipeline_outcome'] = 'vinto';
-        } elseif ($outcome === 'vinto') {
-            throw ValidationException::withMessages(['pipeline_outcome' => 'Lo stato vinto richiede Contratto o Pagato.']);
-        }
         if ($stage === 'pagato') {
             Validator::make(['paid_at' => array_key_exists('paid_at', $data) ? $data['paid_at'] : $item->paid_at?->format('Y-m-d')],
                 ['paid_at' => 'required|date_format:Y-m-d|before_or_equal:today'])->validate();

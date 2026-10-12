@@ -14,6 +14,8 @@ enum PipelineStage: string
     case Negotiation = 'negoziazione';
     case Contract = 'contratto';
     case Paid = 'pagato';
+    case Postponed = 'rimandato';
+    case Refused = 'rifiutato';
 
     public function label(): string
     {
@@ -28,6 +30,29 @@ enum PipelineStage: string
             self::Negotiation => 'Negoziazione',
             self::Contract => 'Contratto',
             self::Paid => 'Pagato',
+            self::Postponed => 'Rimandato',
+            self::Refused => 'Rifiutato',
+        };
+    }
+
+    public function closed(): bool
+    {
+        return in_array($this, [self::Contract, self::Paid, self::Refused], true);
+    }
+
+    public static function closedValues(): array
+    {
+        return ['contratto', 'pagato', 'rifiutato'];
+    }
+
+    // Retained only for compatibility with historical database columns.
+    public function legacyOutcome(): string
+    {
+        return match ($this) {
+            self::Contract, self::Paid => 'vinto',
+            self::Refused => 'perso',
+            self::Postponed => 'in_attesa',
+            default => 'in_corso',
         };
     }
 }

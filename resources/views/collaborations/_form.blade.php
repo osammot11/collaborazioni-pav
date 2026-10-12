@@ -8,25 +8,16 @@
 <div class="form-grid">
     <div class="field field-wide pipeline-form-intro">
         <h2>Contatto e pipeline</h2>
-        <p class="muted">Contratto indica un accordo acquisito, non necessariamente incassato. Pagato indica l’incasso e richiede la data effettiva del pagamento.</p>
+        <p class="muted">Un solo stato per ogni progetto. Contratto non implica incasso; Pagato richiede la data effettiva. Rimandato indica un progetto sospeso, Rifiutato un progetto abortito.</p>
     </div>
     <div class="field">
-        <label for="pipeline_stage">Fase commerciale</label>
+        <label for="pipeline_stage">Stato pipeline</label>
         <select id="pipeline_stage" name="pipeline_stage" required>
             @foreach (\App\Enums\PipelineStage::cases() as $stage)
                 <option value="{{ $stage->value }}" @selected(old('pipeline_stage', $collaboration->pipeline_stage?->value ?? 'da_contattare') === $stage->value)>{{ $stage->label() }}</option>
             @endforeach
         </select>
         @error('pipeline_stage')<p class="field-error">{{ $message }}</p>@enderror
-    </div>
-    <div class="field">
-        <label for="pipeline_outcome">Esito commerciale</label>
-        <select id="pipeline_outcome" name="pipeline_outcome" required>
-            @foreach (\App\Enums\PipelineOutcome::cases() as $outcome)
-                <option value="{{ $outcome->value }}" @selected(old('pipeline_outcome', $collaboration->pipeline_outcome?->value ?? 'in_corso') === $outcome->value)>{{ $outcome->label() }}</option>
-            @endforeach
-        </select>
-        @error('pipeline_outcome')<p class="field-error">{{ $message }}</p>@enderror
     </div>
     @foreach (['category' => 'Categoria cliente', 'contact_name' => 'Referente', 'contact_email' => 'Email del contatto', 'service' => 'Servizio proposto', 'demo_type' => 'Tipo di demo', 'demo_date' => 'Data demo', 'next_action' => 'Prossima azione', 'follow_up_date' => 'Data follow-up'] as $field => $label)
         <div class="field">
@@ -36,7 +27,7 @@
         </div>
     @endforeach
     <div class="field field-wide">
-        <label for="outcome_reason">Contesto dell’esito <small>Opzionale</small></label>
+        <label for="outcome_reason">Nota sullo stato <small>Opzionale</small></label>
         <textarea id="outcome_reason" name="outcome_reason" rows="2" placeholder="Es. Budget insufficiente, da ricontattare a gennaio…">{{ old('outcome_reason', $collaboration->outcome_reason) }}</textarea>
         @error('outcome_reason')<p class="field-error">{{ $message }}</p>@enderror
     </div>

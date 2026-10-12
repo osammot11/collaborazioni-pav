@@ -8,5 +8,5 @@ class PipelineOptions extends PipelineTool
 
     protected string $name = 'pipeline_options';
 
-    protected string $description = 'Leggi fasi, esiti, situazioni di pagamento e regole della pipeline. Usa i value esatti negli altri strumenti.';
+    protected string $description = 'Leggi stati, situazioni di pagamento e regole della pipeline. Non ci sono esiti separati. Usa i value esatti negli altri strumenti.';
 }

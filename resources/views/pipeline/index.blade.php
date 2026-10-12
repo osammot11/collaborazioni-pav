@@ -1,11 +1,13 @@
 @extends('layouts.app')
 @section('title', 'Pipeline commerciale')
 @section('content')
+    <div id="pipeline-content">
+    <div data-pipeline-feedback role="status" aria-live="polite" hidden></div>
     <section class="hero-row pipeline-hero">
         <div>
             <p class="eyebrow">Sviluppo commerciale</p>
         <h1>Dall’outbound all’incasso</h1>
-            <p class="hero-subtitle">Tieni il filo di ogni opportunità, della prossima azione e dell’esito.</p>
+            <p class="hero-subtitle">Un solo stato per ogni opportunità, con date e prossime azioni.</p>
         </div>
         <a class="button button-primary" href="{{ route('collaborations.create') }}">＋ Nuovo contatto</a>
     </section>
@@ -14,31 +16,28 @@
         <div class="flash flash-error" role="alert"><div>@foreach ($errors->all() as $error)<p>{{ $error }}</p>@endforeach</div></div>
     @endif
     <section class="list-card pipeline-filters">
-        <form method="GET" action="{{ route('pipeline') }}" class="filters">
+        <form method="GET" action="{{ route('pipeline') }}" class="filters" data-pipeline-filters>
             <div class="search-field"><label class="sr-only" for="pipeline_search">Cerca opportunità</label><input id="pipeline_search" name="search" value="{{ $filters['search'] ?? '' }}" placeholder="Nome, referente, email, servizio…"></div>
             <label class="sr-only" for="category">Categoria</label>
             <select id="category" name="category"><option value="">Tutte le categorie</option>@foreach ($categories as $category)<option @selected(($filters['category'] ?? '') === $category)>{{ $category }}</option>@endforeach</select>
-            <label class="sr-only" for="stage">Fase</label>
-            <select id="stage" name="stage"><option value="">Tutte le fasi</option>@foreach ($stages as $stage)<option value="{{ $stage->value }}" @selected(($filters['stage'] ?? '') === $stage->value)>{{ $stage->label() }}</option>@endforeach</select>
-            <label class="sr-only" for="outcome">Esito</label>
-            <select id="outcome" name="outcome"><option value="">Tutti gli esiti</option>@foreach ($outcomes as $outcome)<option value="{{ $outcome->value }}" @selected(($filters['outcome'] ?? '') === $outcome->value)>{{ $outcome->label() }}</option>@endforeach</select>
+            <label class="sr-only" for="stage">Stato</label>
+            <select id="stage" name="stage"><option value="">Tutti gli stati</option>@foreach ($stages as $stage)<option value="{{ $stage->value }}" @selected(($filters['stage'] ?? '') === $stage->value)>{{ $stage->label() }}</option>@endforeach</select>
             <label class="sr-only" for="follow_up">Follow-up</label>
             <select id="follow_up" name="follow_up"><option value="">Tutti i follow-up</option>@foreach (['due' => 'Oggi / scaduti', 'upcoming' => 'Prossimi', 'none' => 'Non pianificati'] as $value => $label)<option value="{{ $value }}" @selected(($filters['follow_up'] ?? '') === $value)>{{ $label }}</option>@endforeach</select>
             <button class="button button-secondary">Filtra</button><a class="button button-link" href="{{ route('pipeline') }}">Azzera</a>
         </form>
     </section>
-    <p class="muted pipeline-help">Puoi saltare fasi o riaprire una trattativa. Gli esiti restano nella fase raggiunta: “Senza risposta” è una tua valutazione, non viene assegnata automaticamente.</p>
+    <p class="muted pipeline-help">Puoi cambiare stato o riaprire una trattativa. Usa Rimandato per progetti sospesi e Rifiutato per quelli abortiti, senza eliminarne lo storico.</p>
     <div class="pipeline-scroll-top" data-pipeline-scroll-top role="region" aria-label="Scorri le fasi della pipeline" aria-controls="pipeline-board" tabindex="0" hidden>
         <div data-pipeline-scroll-spacer aria-hidden="true"></div>
     </div>
     <div id="pipeline-board" class="pipeline-board" role="region" aria-label="Pipeline per fase" tabindex="0">
         @foreach ($columns as $column)
             @if ($column['stage']->value !== 'da_classificare' || $column['total'] > 0)
-                <section class="pipeline-column">
+                <section class="pipeline-column" data-stage="{{ $column['stage']->value }}">
                     <div class="pipeline-column-heading"><h2>{{ $column['stage']->label() }}</h2><span class="status-count">{{ $column['total'] }}</span></div>
                     @forelse ($column['items'] as $item)
-                        <article class="opportunity-card">
-                            <span class="outcome-pill outcome-{{ $item->pipeline_outcome->value }}">{{ $item->pipeline_outcome->label() }}</span>
+                        <article class="opportunity-card" data-opportunity-id="{{ $item->id }}">
                             <a class="collaboration-name" href="{{ route('collaborations.edit', $item) }}">{{ $item->name }}</a>
                             @if ($item->category)<p class="category-label">{{ $item->category }}</p>@endif
                             @if ($item->contact_name)<p>{{ $item->contact_name }}</p>@endif
@@ -52,16 +51,14 @@
                             @if ($item->paid_at)<p class="contract-label">Incassato il {{ $item->paid_at->format('d/m/Y') }}</p>@endif
                             @if ($item->next_action)<p class="next-action">→ {{ $item->next_action }}</p>@endif
                             @if ($item->follow_up_date)
-                                <p class="follow-up-date {{ ! $item->pipeline_outcome->closed() && $item->follow_up_date->lte(today()) ? 'follow-up-due' : '' }}">Follow-up: {{ $item->follow_up_date->format('d/m/Y') }}{{ ! $item->pipeline_outcome->closed() && $item->follow_up_date->lte(today()) ? ' · Da gestire' : '' }}</p>
+                                <p class="follow-up-date {{ ! $item->pipeline_stage->closed() && $item->follow_up_date->lte(today()) ? 'follow-up-due' : '' }}">Follow-up: {{ $item->follow_up_date->format('d/m/Y') }}{{ ! $item->pipeline_stage->closed() && $item->follow_up_date->lte(today()) ? ' · Da gestire' : '' }}</p>
                             @endif
                             <details class="pipeline-move">
-                                <summary>Aggiorna fase / esito</summary>
-                                <form method="POST" action="{{ route('pipeline.update', $item) }}">
+                                <summary>Aggiorna stato</summary>
+                                <form method="POST" action="{{ route('pipeline.update', $item) }}" data-pipeline-update>
                                     @csrf @method('PATCH')
-                                    <label for="move-stage-{{ $item->id }}">Fase</label>
+                                    <label for="move-stage-{{ $item->id }}">Stato</label>
                                     <select id="move-stage-{{ $item->id }}" name="pipeline_stage">@foreach ($stages as $stage)<option value="{{ $stage->value }}" @selected($item->pipeline_stage === $stage)>{{ $stage->label() }}</option>@endforeach</select>
-                                    <label for="move-outcome-{{ $item->id }}">Esito</label>
-                                    <select id="move-outcome-{{ $item->id }}" name="pipeline_outcome">@foreach ($outcomes as $outcome)<option value="{{ $outcome->value }}" @selected($item->pipeline_outcome === $outcome)>{{ $outcome->label() }}</option>@endforeach</select>
                                     <label for="move-reason-{{ $item->id }}">Nota sul passaggio</label><textarea id="move-reason-{{ $item->id }}" name="outcome_reason" rows="2" maxlength="5000">{{ $item->outcome_reason }}</textarea>
                                     <label for="move-deadline-{{ $item->id }}">Scadenza pagamento (opzionale)</label>
                                     <input id="move-deadline-{{ $item->id }}" name="payment_deadline" type="date" value="{{ $item->payment_deadline?->format('Y-m-d') }}">
@@ -83,13 +80,14 @@
         <div class="list-header"><h2>Tutte le opportunità</h2><span class="result-count">{{ $results->total() }} risultati</span></div>
         <div class="pipeline-result-list">
             @forelse ($results as $item)
-                <a href="{{ route('collaborations.edit', $item) }}"><strong>{{ $item->name }}</strong><span>{{ $item->pipeline_stage->label() }} · {{ $item->pipeline_outcome->label() }}</span></a>
+                <a href="{{ route('collaborations.edit', $item) }}"><strong>{{ $item->name }}</strong><span>{{ $item->pipeline_stage->label() }}</span></a>
             @empty<p class="muted">Nessun risultato. Aggiungi un contatto o modifica i filtri.</p>@endforelse
         </div>
         {{ $results->links('components.pagination') }}
     </section>
+    </div>
 @endsection
 
 @push('scripts')
-<script src="{{ asset('js/pipeline.js') }}" defer></script>
+<script src="{{ asset('js/pipeline.js') }}?v={{ filemtime(public_path('js/pipeline.js')) }}" defer></script>
 @endpush
