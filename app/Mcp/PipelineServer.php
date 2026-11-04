@@ -14,11 +14,13 @@ class PipelineServer extends Server
 {
     protected string $name = 'Produce a Value · Pipeline';
 
-    protected string $version = '2.0.0';
+    protected string $version = '2.1.0';
 
     protected string $instructions = 'Gestionale commerciale personale. Usa pipeline_options per i valori ammessi. '
         .'La pipeline usa un solo stato pipeline_stage, senza esiti. La situazione dei pagamenti resta separata per il riepilogo delle rendite. Prima di modificare rileggi l’opportunità e usa la revision corrente. '
         .'Contratto non significa incassato. Pagato richiede la data effettiva paid_at; payment_deadline indica la scadenza prevista. '
+        .'Per acconti e rate usa payment_total, payment_entries e payment_schedule: gli incassi parziali non sono un saldo. Gli elenchi sostituiscono quelli esistenti: rileggi e preserva le altre righe. '
+        .'I rinnovi usano recurring_amount e recurring_frequency senza conversioni mensili. Non inventare né registrare automaticamente incassi. '
         .'Rifiutato separa progetti abortiti; Rimandato quelli sospesi. Nessuno dei due elimina dati. '
         .'Chiedi conferma delle modifiche quando il consenso non è esplicito. Non inventare dati, importi o date. '
         .'Genera un UUID request_id per ogni modifica e riusa lo stesso UUID soltanto per ritentare la stessa operazione. '

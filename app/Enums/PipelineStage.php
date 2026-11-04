@@ -13,6 +13,7 @@ enum PipelineStage: string
     case Quote = 'preventivo_inviato';
     case Negotiation = 'negoziazione';
     case Contract = 'contratto';
+    case PartiallyPaid = 'parzialmente_pagato';
     case Paid = 'pagato';
     case Postponed = 'rimandato';
     case Refused = 'rifiutato';
@@ -30,6 +31,7 @@ enum PipelineStage: string
             self::Negotiation => 'Negoziazione',
             self::Contract => 'Contratto',
             self::Paid => 'Pagato',
+            self::PartiallyPaid => 'Parzialmente pagato',
             self::Postponed => 'Rimandato',
             self::Refused => 'Rifiutato',
         };

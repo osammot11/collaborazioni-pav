@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Enums\CollaborationStatus;
+use App\Enums\RecurringFrequency;
 use App\Http\Requests\CollaborationRequest;
 use App\Models\Collaboration;
 use Illuminate\Database\Eloquent\Builder;
@@ -10,6 +11,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
 
 class CollaborationController extends Controller
@@ -42,8 +44,8 @@ class CollaborationController extends Controller
         $this->applyDeadlineFilter($query, $filters['deadline'] ?? null);
 
         $collaborations = $query
-            ->orderByRaw('payment_deadline IS NULL')
-            ->orderBy('payment_deadline')
+            ->orderByRaw('next_payment_due_on IS NULL')
+            ->orderBy('next_payment_due_on')
             ->latest('created_at')
             ->paginate(12)
             ->withQueryString();
@@ -74,6 +76,12 @@ class CollaborationController extends Controller
             'grandMonthly' => $totalsByStatus->sum('monthly'),
             'grandOneTime' => $totalsByStatus->sum('one_time'),
             'filters' => $filters,
+            'recurringTotals' => collect(RecurringFrequency::cases())->mapWithKeys(fn ($frequency) => [$frequency->value => [
+                'frequency' => $frequency,
+                'amount' => Collaboration::where('recurring_frequency', $frequency->value)->sum('recurring_amount'),
+            ]]),
+            'recurringByStatus' => DB::table('collaborations')->selectRaw('status, recurring_frequency, SUM(recurring_amount) as amount')
+                ->groupBy('status', 'recurring_frequency')->get()->groupBy('status'),
         ]);
     }
 
@@ -106,7 +114,17 @@ class CollaborationController extends Controller
 
     public function update(CollaborationRequest $request, Collaboration $collaboration): RedirectResponse|JsonResponse
     {
-        DB::transaction(fn () => $collaboration->update($request->validated()));
+        $collaboration = DB::transaction(function () use ($request, $collaboration) {
+            $current = Collaboration::findOrFail($collaboration->id);
+            if ($request->filled('expected_revision') && $current->revision !== $request->integer('expected_revision')) {
+                throw ValidationException::withMessages(['expected_revision' => 'La scheda è cambiata. Riaprila prima di salvare per non sovrascrivere altri pagamenti.']);
+            }
+            $data = $request->validated();
+            unset($data['expected_revision']);
+            $current->update($data);
+
+            return $current;
+        }, 3);
 
         if ($request->expectsJson()) {
             return response()->json(['message' => 'Collaborazione aggiornata.',
@@ -130,7 +148,7 @@ class CollaborationController extends Controller
         }
 
         if ($deadline === 'none') {
-            $query->whereNull('payment_deadline');
+            $query->whereNull('next_payment_due_on');
 
             return;
         }
@@ -138,9 +156,9 @@ class CollaborationController extends Controller
         $query->whereIn('status', CollaborationStatus::actionableValues());
 
         match ($deadline) {
-            'overdue' => $query->whereDate('payment_deadline', '<', today()),
-            'today' => $query->whereDate('payment_deadline', today()),
-            'upcoming' => $query->whereDate('payment_deadline', '>', today()),
+            'overdue' => $query->whereDate('next_payment_due_on', '<', today()),
+            'today' => $query->whereDate('next_payment_due_on', today()),
+            'upcoming' => $query->whereDate('next_payment_due_on', '>', today()),
             default => null,
         };
     }

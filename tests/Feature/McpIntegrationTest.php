@@ -102,6 +102,41 @@ class McpIntegrationTest extends TestCase
         $this->withSession(['collaborations_authorized' => true])->get('/integrazioni')->assertRedirect('/login');
     }
 
+    public function test_mcp_tracks_partial_payments_annual_recurrence_and_idempotent_balance(): void
+    {
+        $this->travelTo(now()->setDate(2026, 11, 3));
+        $token = $this->credentials()['access_token'];
+        $created = $this->rpc('create_opportunity', ['request_id' => (string) Str::uuid(), 'fields' => [
+            'name' => 'Rate annuali', 'pipeline_stage' => 'contratto', 'recurring_amount' => '1200.00',
+            'recurring_frequency' => 'annuale', 'next_renewal_date' => '2027-11-03', 'payment_total' => '1200.00',
+            'payment_entries' => [['amount' => '300.00', 'paid_on' => '2026-11-01']],
+            'payment_schedule' => [['amount' => '1200.00', 'due_on' => '2026-12-01']],
+        ]], $token)->assertJsonPath('result.isError', false)
+            ->assertJsonPath('result.structuredContent.opportunity.pipeline_stage', 'parzialmente_pagato')
+            ->assertJsonPath('result.structuredContent.opportunity.payment_summary.remaining', '900.00')
+            ->assertJsonPath('result.structuredContent.opportunity.recurring_frequency', 'annuale')
+            ->assertJsonPath('result.structuredContent.opportunity.monthly_revenue', '0.00');
+        $id = $created->json('result.structuredContent.opportunity.id');
+        $this->rpc('update_opportunity', ['id' => $id, 'expected_revision' => 1, 'request_id' => (string) Str::uuid(),
+            'fields' => ['pipeline_stage' => 'pagato']], $token)->assertJsonPath('result.isError', true);
+        $update = ['id' => $id, 'expected_revision' => 1, 'request_id' => (string) Str::uuid(), 'fields' => [
+            'payment_entries' => [['amount' => '300.00', 'paid_on' => '2026-11-01'], ['amount' => '900.00', 'paid_on' => '2026-11-03']],
+        ]];
+        $this->rpc('update_opportunity', $update, $token)->assertJsonPath('result.isError', false)
+            ->assertJsonPath('result.structuredContent.opportunity.pipeline_stage', 'pagato')
+            ->assertJsonPath('result.structuredContent.opportunity.payment_summary.remaining', '0.00')
+            ->assertJsonPath('result.structuredContent.opportunity.paid_at', '2026-11-03');
+        $this->rpc('update_opportunity', $update, $token)->assertJsonPath('result.structuredContent.replayed', true);
+        $item = Collaboration::findOrFail($id);
+        $this->assertSame(2, count($item->payment_entries));
+        $this->assertDatabaseCount('finance_events', 1);
+        $this->rpc('update_opportunity', ['id' => $id, 'expected_revision' => 2, 'request_id' => (string) Str::uuid(),
+            'fields' => ['notes' => 'Non modificare incassi']], $token)
+            ->assertJsonPath('result.structuredContent.opportunity.payment_summary.received', '1200.00');
+        $this->rpc('update_opportunity', ['id' => $id, 'expected_revision' => 3, 'request_id' => (string) Str::uuid(),
+            'fields' => ['monthly_revenue' => '100.00', 'recurring_amount' => '1200.00']], $token)->assertJsonPath('result.isError', true);
+    }
+
     public function test_mcp_uses_one_state_without_outcome_fields_or_filters(): void
     {
         $token = $this->credentials()['access_token'];
@@ -195,8 +230,9 @@ class McpIntegrationTest extends TestCase
         $create = ['request_id' => (string) Str::uuid(), 'fields' => ['name' => 'Hotel Aurora', 'category' => 'Hotel',
             'monthly_revenue' => '250.00', 'one_time_revenue' => '1000.00', 'notes' => 'Nota originale',
             'contact_email' => 'hotel@example.com', 'follow_up_date' => '2026-11-20']];
-        $created = $this->rpc('create_opportunity', $create, $token)->assertOk()->assertJsonPath('result.isError', false)
-            ->assertJsonPath('result.structuredContent.opportunity.name', 'Hotel Aurora');
+        $created = $this->rpc('create_opportunity', $create, $token)->assertOk();
+        $this->assertFalse($created->json('result.isError'), $created->getContent());
+        $created->assertJsonPath('result.structuredContent.opportunity.name', 'Hotel Aurora');
         $id = $created->json('result.structuredContent.opportunity.id');
         $this->rpc('create_opportunity', $create, $token)->assertJsonPath('result.structuredContent.replayed', true);
         $this->assertDatabaseCount('collaborations', 1);

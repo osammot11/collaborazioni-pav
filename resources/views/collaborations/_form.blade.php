@@ -8,7 +8,7 @@
 <div class="form-grid">
     <div class="field field-wide pipeline-form-intro">
         <h2>Contatto e pipeline</h2>
-        <p class="muted">Un solo stato per ogni progetto. Contratto non implica incasso; Pagato richiede la data effettiva. Rimandato indica un progetto sospeso, Rifiutato un progetto abortito.</p>
+        <p class="muted">Contratto non implica incasso. Con un piano di pagamento, gli acconti determinano Parzialmente pagato e solo il saldo determina Pagato. Rimandato indica un progetto sospeso, Rifiutato un progetto abortito.</p>
     </div>
     <div class="field">
         <label for="pipeline_stage">Stato pipeline</label>
@@ -45,9 +45,20 @@
     </div>
 
     <div class="field">
-        <label for="monthly_revenue">Rendita mensile</label>
-        <div class="money-input"><span>€</span><input id="monthly_revenue" name="monthly_revenue" type="text" inputmode="decimal" value="{{ old('monthly_revenue', $collaboration->exists ? str_replace('.', ',', $collaboration->monthly_revenue) : '0,00') }}" class="@error('monthly_revenue') is-invalid @enderror" placeholder="0,00"></div>
-        @error('monthly_revenue')<p class="field-error">{{ $message }}</p>@enderror
+        <label for="recurring_amount">Importo di ogni rinnovo</label>
+        <div class="money-input"><span>€</span><input id="recurring_amount" name="recurring_amount" type="text" inputmode="decimal" value="{{ old('recurring_amount', $collaboration->recurring_amount ?? $collaboration->monthly_revenue ?? '0,00') }}" placeholder="0,00"></div>
+        @error('recurring_amount')<p class="field-error">{{ $message }}</p>@enderror
+    </div>
+
+    <div class="field">
+        <label for="recurring_frequency">Frequenza del rinnovo</label>
+        <select id="recurring_frequency" name="recurring_frequency">@foreach (\App\Enums\RecurringFrequency::cases() as $frequency)<option value="{{ $frequency->value }}" @selected(old('recurring_frequency', $collaboration->recurring_frequency->value) === $frequency->value)>{{ $frequency->label() }}</option>@endforeach</select>
+        <p class="muted">Inserisci l’importo reale del rinnovo, senza dividerlo per 12. Zero se non c’è rinnovo.</p>
+    </div>
+    <div class="field">
+        <label for="next_renewal_date">Prossima scadenza di rinnovo <small>Opzionale</small></label>
+        <input id="next_renewal_date" name="next_renewal_date" type="date" value="{{ old('next_renewal_date', $collaboration->next_renewal_date?->format('Y-m-d')) }}">
+        @error('next_renewal_date')<p class="field-error">{{ $message }}</p>@enderror
     </div>
 
     <div class="field">
@@ -75,9 +86,11 @@
     <div class="field">
         <label for="paid_at">Data effettiva del pagamento <small>Richiesta per Pagato</small></label>
         <input id="paid_at" name="paid_at" type="date" max="{{ today()->format('Y-m-d') }}" value="{{ old('paid_at', $collaboration->paid_at?->format('Y-m-d')) }}">
-        <p class="muted">Data dell’incasso, distinta dalla scadenza prevista. Non è uno storico delle rate.</p>
+        <p class="muted">Per i piani rateizzati viene calcolata automaticamente al saldo. I singoli acconti vanno registrati sotto.</p>
         @error('paid_at')<p class="field-error">{{ $message }}</p>@enderror
     </div>
+
+    @include('collaborations._finance')
 
     <div class="field field-wide">
         <label for="notes">Note <small>Opzionale</small></label>

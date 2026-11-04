@@ -21,7 +21,8 @@ trait ValidatesPipeline
             'follow_up_date' => ['nullable', 'date_format:Y-m-d'],
             'outcome_reason' => ['nullable', 'string', 'max:5000'],
             'payment_deadline' => ['nullable', 'date_format:Y-m-d'],
-            'paid_at' => [Rule::requiredIf(fn () => $this->input('pipeline_stage', $this->route('collaboration')?->pipeline_stage?->value) === 'pagato'), 'nullable', 'date_format:Y-m-d', 'before_or_equal:today'],
+            'paid_at' => [Rule::requiredIf(fn () => $this->input('pipeline_stage', $this->route('collaboration')?->pipeline_stage?->value) === 'pagato'
+                && $this->input('payment_total', $this->route('collaboration')?->payment_total) === null), 'nullable', 'date_format:Y-m-d', 'before_or_equal:today'],
         ];
     }
 

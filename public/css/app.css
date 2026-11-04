@@ -345,3 +345,15 @@ tbody tr:hover { background: #fbfcff; }
     box-shadow: 0 12px 36px rgb(31 41 55 / 15%);
 }
 [data-pipeline-update] [aria-invalid="true"] { border-color: #dc3545; }
+
+.finance-section { border-top: 1px solid var(--line); padding-top: 24px; }
+.finance-audit { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; }
+.finance-ledger { margin: 24px 0; }
+.finance-row { display: grid; grid-template-columns: 1fr 1fr 1.5fr auto; gap: 12px; align-items: end; margin-bottom: 12px; }
+.finance-row label { display: grid; gap: 7px; font-size: 13px; color: var(--ink-soft); }
+.payment-summary { background: #f6f8ff; border: 1px solid #e7e7fa; border-radius: 12px; padding: 14px; margin: 12px 0; }
+.payment-totals { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; }
+.payment-totals span { display: grid; gap: 4px; flex: 1; min-width: 65px; }
+.payment-summary progress { width: 100%; height: 8px; accent-color: var(--primary); margin-top: 12px; }
+.status-parzialmente_pagato { --status-color: #b7791f; --status-bg: #fff5dc; }
+@media (max-width: 700px) { .finance-row { grid-template-columns: 1fr 1fr; padding: 14px; border: 1px solid var(--line); border-radius: 12px; } }

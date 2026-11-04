@@ -1,5 +1,21 @@
 (() => {
     let busy = false;
+    document.addEventListener('click', event => {
+        const add = event.target.closest('[data-finance-add]');
+        if (add) {
+            const ledger = add.closest('[data-finance-ledger]');
+            const indices = [...ledger.querySelectorAll('[data-finance-rows] input[name]')]
+                .map(input => Number(input.name.match(/\[(\d+)\]/)?.[1] ?? -1));
+            const index = Math.max(-1, ...indices) + 1;
+            const html = ledger.querySelector('template').innerHTML.replaceAll('__INDEX__', index);
+            ledger.querySelector('[data-finance-rows]').insertAdjacentHTML('beforeend', html);
+            ledger.querySelector('[data-finance-rows] .finance-row:last-child input')?.focus();
+        }
+        const remove = event.target.closest('[data-finance-remove]');
+        if (remove && window.confirm('Rimuovere questa riga al prossimo salvataggio? La versione precedente resterà nel registro finanziario.')) {
+            remove.closest('.finance-row').remove();
+        }
+    });
     document.addEventListener('submit', async event => {
         const form = event.target;
         if (!form.matches('[data-collaboration-form]')) return;
@@ -28,7 +44,11 @@
             const data = await response.json();
             if (!response.ok) {
                 show(data.errors ? Object.values(data.errors).flat().join(' ') : (data.message || 'Salvataggio non riuscito.'), true);
-                if (data.errors) form.elements.namedItem(Object.keys(data.errors)[0])?.focus();
+                if (data.errors) {
+                    const field = Object.keys(data.errors)[0].split('.');
+                    const name = field.shift() + field.map(part => `[${part}]`).join('');
+                    form.elements.namedItem(name)?.focus();
+                }
                 return;
             }
             const parsed = new DOMParser().parseFromString(data.html, 'text/html');

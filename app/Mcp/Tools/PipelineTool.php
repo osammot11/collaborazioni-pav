@@ -4,6 +4,7 @@ namespace App\Mcp\Tools;
 
 use App\Enums\CollaborationStatus;
 use App\Enums\PipelineStage;
+use App\Enums\RecurringFrequency;
 use App\Http\Controllers\OAuthDiscoveryController;
 use App\Services\PipelineIntegration;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
@@ -41,6 +42,8 @@ abstract class PipelineTool extends Tool
             $properties = ['query' => $string, 'category' => $string,
                 'stage' => ['type' => 'string', 'enum' => array_column(PipelineStage::cases(), 'value')],
                 'follow_up' => ['type' => 'string', 'enum' => ['overdue', 'today', 'upcoming', 'none']],
+                'renewal' => ['type' => 'string', 'enum' => ['due', 'upcoming', 'none']],
+                'payment_due' => ['type' => 'string', 'enum' => ['due', 'upcoming', 'none']],
                 'page' => $integer, 'per_page' => [...$integer, 'maximum' => 50]];
         }
         if (in_array($this->action, ['get', 'update', 'delete'], true)) {
@@ -56,20 +59,31 @@ abstract class PipelineTool extends Tool
         }
         if (in_array($this->action, ['create', 'update'], true)) {
             $fields = [];
-            foreach (PipelineIntegration::FIELDS as $field) {
+            foreach ([...PipelineIntegration::FIELDS, ...PipelineIntegration::FINANCE_FIELDS] as $field) {
                 $fields[$field] = ['type' => in_array($field, ['name', 'status', 'pipeline_stage', 'monthly_revenue', 'one_time_revenue']) ? 'string' : ['string', 'null']];
             }
             foreach (['pipeline_stage' => PipelineStage::class, 'status' => CollaborationStatus::class] as $field => $enum) {
                 $fields[$field]['enum'] = array_column($enum::cases(), 'value');
             }
+            $fields['recurring_frequency'] = ['type' => 'string', 'enum' => array_column(RecurringFrequency::cases(), 'value')];
+            $fields['recurring_amount'] = ['type' => 'string', 'description' => 'Importo reale di ogni rinnovo. Per 1200 EUR annuali usa 1200.00 e frequenza annuale, non 100 mensili.'];
+            $fields['payment_total'] = ['type' => ['string', 'null'], 'description' => 'Totale da saldare per accordo/periodo esplicito payment_scope; non dedurlo dai rinnovi futuri. Obbligatorio con rate o incassi.'];
+            foreach (['payment_entries' => 'paid_on', 'payment_schedule' => 'due_on'] as $list => $date) {
+                $fields[$list] = ['type' => 'array', 'maxItems' => 200,
+                    'description' => 'Sostituisce l’intero elenco: rileggi, conserva tutte le righe non modificate e chiedi conferma delle rimozioni. '.($list === 'payment_entries' ? 'Solo incassi reali non futuri.' : 'Rate previste, non incassi.'),
+                    'items' => ['type' => 'object', 'additionalProperties' => false, 'required' => ['amount', $date],
+                        'properties' => ['amount' => ['type' => 'string', 'pattern' => '^\\d{1,10}(\\.\\d{1,2})?$', 'description' => 'EUR maggiori di zero'],
+                            $date => ['type' => 'string', 'format' => 'date'], 'note' => ['type' => ['string', 'null'], 'maxLength' => 500]]]];
+            }
             foreach (['monthly_revenue', 'one_time_revenue'] as $field) {
                 $fields[$field]['description'] = 'Euro senza separatore delle migliaia, punto decimale, es. 1250.00. Minimo 0, massimo 9999999999.99.';
                 $fields[$field]['pattern'] = '^\\d{1,10}(\\.\\d{1,2})?$';
             }
-            foreach (['payment_deadline', 'paid_at', 'demo_date', 'follow_up_date'] as $field) {
+            foreach (['payment_deadline', 'paid_at', 'demo_date', 'follow_up_date', 'next_renewal_date'] as $field) {
                 $fields[$field]['description'] = 'Data YYYY-MM-DD oppure null per rimuoverla.';
             }
-            $fields['paid_at']['description'] = 'Data effettiva dell’incasso YYYY-MM-DD, non futura. Obbligatoria per fase pagato; non inventarla. Null per rimuoverla solo fuori dalla fase pagato.';
+            $fields['paid_at']['description'] = 'Data del saldo YYYY-MM-DD, non futura. Con payment_total viene calcolata dagli incassi; senza piano è richiesta per pagato. Non inventarla.';
+            $fields['monthly_revenue']['description'] = 'Compatibilità storica: solo importi mensili. Non usare insieme a recurring_amount/recurring_frequency; preferisci questi ultimi.';
             $properties['fields'] = ['type' => 'object', 'properties' => $fields, 'additionalProperties' => false,
                 'minProperties' => 1, 'required' => $this->action === 'create' ? ['name'] : []];
             $properties['request_id'] = ['type' => 'string', 'format' => 'uuid', 'description' => 'UUID idempotenza: stesso valore solo per ritentare identica operazione.'];
@@ -122,11 +136,14 @@ abstract class PipelineTool extends Tool
         $map = fn ($enum) => array_map(fn ($case) => ['value' => $case->value, 'label' => $case->label()], $enum::cases());
 
         return ['stages' => $map(PipelineStage::class),
+            'recurring_frequencies' => $map(RecurringFrequency::class),
             'payment_statuses' => $map(CollaborationStatus::class), 'currency' => 'EUR', 'dates' => 'YYYY-MM-DD',
             'rules' => ['Un solo stato pipeline_stage: nessun esito separato. Contratto non implica pagamento', 'pagato imposta situazione pagato; richiede paid_at non futura',
                 'rifiutato e rimandato impostano la corrispondente situazione; conservano dati e storico',
                 'riaprire da rifiutato/rimandato ripristina situazione forse salvo una diversa situazione esplicita',
-                'payment_deadline è la scadenza prevista; paid_at è la data effettiva dell’incasso, non uno storico di rate',
+                'payment_total è il totale del periodo/accordo: payment_entries sono incassi effettivi, payment_schedule sono rate previste',
+                'Con un piano: incasso parziale implica parzialmente_pagato; solo il saldo implica pagato e calcola paid_at. Mai inventare incassi per completare un saldo',
+                'recurring_amount è l’importo reale per recurring_frequency; next_renewal_date non avanza automaticamente e non crea incassi',
                 'update preserva i campi omessi; null cancella un campo opzionale',
                 'delete è definitivo, richiede pipeline:delete, revisione, nome esatto e conferma esplicita dell’utente']];
     }

@@ -17,18 +17,20 @@ class PipelineIntegration
         'payment_deadline', 'paid_at', 'notes', 'pipeline_stage', 'category', 'contact_name',
         'contact_email', 'service', 'demo_type', 'demo_date', 'next_action', 'follow_up_date', 'outcome_reason'];
 
+    public const FINANCE_FIELDS = CollaborationFinance::FIELDS;
+
     public function snapshot(Collaboration $item): array
     {
-        $fields = $item->only(self::FIELDS);
-        foreach (['pipeline_stage', 'status'] as $field) {
+        $fields = $item->only([...self::FIELDS, ...self::FINANCE_FIELDS]);
+        foreach (['pipeline_stage', 'status', 'recurring_frequency'] as $field) {
             $fields[$field] = $item->$field->value;
         }
-        foreach (['payment_deadline', 'paid_at', 'demo_date', 'follow_up_date'] as $field) {
+        foreach (['payment_deadline', 'paid_at', 'demo_date', 'follow_up_date', 'next_renewal_date'] as $field) {
             $fields[$field] = $item->$field?->format('Y-m-d');
         }
 
         return array_merge(['id' => $item->id, 'revision' => $item->revision], $fields,
-            ['contract_type' => $item->contractType(), 'updated_at' => $item->updated_at?->toIso8601String()]);
+            ['payment_summary' => $item->financeSummary(), 'contract_type' => $item->contractType(), 'updated_at' => $item->updated_at?->toIso8601String()]);
     }
 
     public function search(array $input): array
@@ -38,6 +40,8 @@ class PipelineIntegration
             'stage' => ['sometimes', Rule::enum(PipelineStage::class)],
             'outcome' => ['prohibited'],
             'follow_up' => ['sometimes', Rule::in(['overdue', 'today', 'upcoming', 'none'])],
+            'renewal' => ['sometimes', Rule::in(['due', 'upcoming', 'none'])],
+            'payment_due' => ['sometimes', Rule::in(['due', 'upcoming', 'none'])],
             'page' => 'sometimes|integer|min:1', 'per_page' => 'sometimes|integer|min:1|max:50',
         ])->validate();
         $query = Collaboration::query()->orderByDesc('id');
@@ -63,6 +67,20 @@ class PipelineIntegration
                     }, today());
             }
         }
+        foreach (['renewal' => 'next_renewal_date', 'payment_due' => 'next_payment_due_on'] as $key => $date) {
+            if (isset($data[$key])) {
+                if ($data[$key] === 'none') {
+                    $query->whereNull($date);
+                } else {
+                    $query->whereDate($date, $data[$key] === 'due' ? '<=' : '>', today());
+                    if ($key === 'renewal') {
+                        $query->where('recurring_amount', '>', 0)->where('status', '!=', 'rifiutato');
+                    } else {
+                        $query->whereIn('status', CollaborationStatus::actionableValues());
+                    }
+                }
+            }
+        }
         $page = $query->paginate($data['per_page'] ?? 20, ['*'], 'page', $data['page'] ?? 1);
 
         return ['items' => $page->getCollection()->map(fn ($item) => $this->snapshot($item))->all(),
@@ -83,7 +101,7 @@ class PipelineIntegration
             'request_id' => 'required|uuid',
             'id' => $action === 'create' ? 'prohibited' : 'required|integer|min:1',
             'expected_revision' => $action === 'create' ? 'prohibited' : 'required|integer|min:1',
-            'fields' => ['required', 'array:'.implode(',', self::FIELDS), 'min:1'],
+            'fields' => ['required', 'array:'.implode(',', [...self::FIELDS, ...self::FINANCE_FIELDS]), 'min:1'],
         ])->validate();
         $client = $user->currentAccessToken()->client_id;
         // Canonicalize field ordering so an identical retried request has the same fingerprint.
@@ -115,6 +133,7 @@ class PipelineIntegration
                 $item->fill($fields);
                 $item->normalizePipeline();
                 $dirty = $item->getDirty();
+                $financeChanged = $item->isDirty(CollaborationFinance::FIELDS);
                 $changed = $item->isDirty(['pipeline_stage', 'pipeline_outcome']);
                 // Atomic compare-and-swap also protects against changes from the web UI.
                 $updated = Collaboration::whereKey($item->id)->where('revision', $input['expected_revision'])->update([
@@ -124,6 +143,9 @@ class PipelineIntegration
                     throw ValidationException::withMessages(['expected_revision' => 'CONFLICT: rileggi i dati prima di aggiornare.']);
                 }
                 $item->refresh();
+                if ($financeChanged) {
+                    $item->recordFinanceChange(array_intersect_key($before, array_flip(CollaborationFinance::FIELDS)));
+                }
                 if ($changed) {
                     $item->pipelineEvents()->create([
                         'from_stage' => $before['pipeline_stage'], 'to_stage' => $item->pipeline_stage,
@@ -213,9 +235,11 @@ class PipelineIntegration
         foreach (['payment_deadline', 'demo_date', 'follow_up_date'] as $field) {
             $rules[$field] = 'nullable|date_format:Y-m-d';
         }
+        $rules = array_merge($rules, CollaborationFinance::rules());
+        $rules['monthly_revenue'][] = Rule::prohibitedIf(isset($fields['recurring_amount']) || isset($fields['recurring_frequency']));
         $data = Validator::make($fields, $rules)->validate();
         $stage = $data['pipeline_stage'] ?? $item->pipeline_stage->value;
-        if ($stage === 'pagato') {
+        if ($stage === 'pagato' && ($data['payment_total'] ?? $item->payment_total) === null) {
             Validator::make(['paid_at' => array_key_exists('paid_at', $data) ? $data['paid_at'] : $item->paid_at?->format('Y-m-d')],
                 ['paid_at' => 'required|date_format:Y-m-d|before_or_equal:today'])->validate();
             $data['status'] = 'pagato';

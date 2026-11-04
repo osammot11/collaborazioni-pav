@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\CollaborationStatus;
 use App\Enums\PipelineStage;
 use App\Http\Requests\PipelineUpdateRequest;
 use App\Models\Collaboration;
@@ -21,6 +22,8 @@ class PipelineController extends Controller
             'category' => ['nullable', 'string', 'max:255'],
             'stage' => ['nullable', Rule::enum(PipelineStage::class)],
             'follow_up' => ['nullable', 'in:due,upcoming,none'],
+            'renewal' => ['nullable', 'in:due,upcoming,none'],
+            'payment_due' => ['nullable', 'in:due,upcoming,none'],
         ]);
 
         $query = Collaboration::query();
@@ -45,6 +48,20 @@ class PipelineController extends Controller
             }
         }
 
+        foreach (['renewal' => 'next_renewal_date', 'payment_due' => 'next_payment_due_on'] as $key => $date) {
+            if ($value = ($filters[$key] ?? null)) {
+                if ($value === 'none') {
+                    $query->whereNull($date);
+                } else {
+                    $query->whereDate($date, $value === 'due' ? '<=' : '>', today());
+                    if ($key === 'renewal') {
+                        $query->where('recurring_amount', '>', 0)->where('status', '!=', 'rifiutato');
+                    } else {
+                        $query->whereIn('status', CollaborationStatus::actionableValues());
+                    }
+                }
+            }
+        }
         $summary = (clone $query)->selectRaw('pipeline_stage, COUNT(*) as total')->groupBy('pipeline_stage')->pluck('total', 'pipeline_stage');
         // Bound each column independently so a large outbound list stays usable.
         $columns = collect(PipelineStage::cases())->mapWithKeys(function ($stage) use ($query, $summary) {

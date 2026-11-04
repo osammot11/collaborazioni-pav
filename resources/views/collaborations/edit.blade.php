@@ -30,6 +30,19 @@
         @endforelse
         {{ $history->links('components.pagination') }}
     </section>
+    <section class="form-card pipeline-history" aria-label="Registro finanziario">
+        <h2>Registro finanziario</h2>
+        <p class="muted">Versioni precedenti di importi, rate e incassi, conservate dopo le correzioni.</p>
+        @php($financeHistory = \Illuminate\Support\Facades\DB::table('finance_events')->where('collaboration_id', $collaboration->id)->latest('id')->paginate(10, ['*'], 'finance_page'))
+        @forelse ($financeHistory as $change)
+            <details class="history-event">
+                <summary>{{ \Illuminate\Support\Carbon::parse($change->created_at)->format('d/m/Y H:i') }} · Modifica finanziaria</summary>
+                <p class="muted">Prima</p><pre class="finance-audit">{{ json_encode(json_decode($change->before), JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE) }}</pre>
+                <p class="muted">Dopo</p><pre class="finance-audit">{{ json_encode(json_decode($change->after), JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE) }}</pre>
+            </details>
+        @empty<p class="muted">Nessuna correzione registrata.</p>@endforelse
+        {{ $financeHistory->links('components.pagination') }}
+    </section>
 @endsection
 
 @push('scripts')

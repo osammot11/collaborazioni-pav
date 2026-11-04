@@ -5,6 +5,7 @@ namespace App\Enums;
 enum CollaborationStatus: string
 {
     case Paid = 'pagato';
+    case PartiallyPaid = 'parzialmente_pagato';
     case Confirmed = 'confermato';
     case Maybe = 'forse';
     case Postponed = 'rimandato';
@@ -14,6 +15,7 @@ enum CollaborationStatus: string
     {
         return match ($this) {
             self::Paid => 'Pagato',
+            self::PartiallyPaid => 'Parzialmente pagato',
             self::Confirmed => 'Confermato',
             self::Maybe => 'Forse',
             self::Postponed => 'Rimandato',

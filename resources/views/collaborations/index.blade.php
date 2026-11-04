@@ -31,6 +31,18 @@
         </article>
     </section>
 
+    <section class="grand-total-grid" aria-label="Rinnovi per frequenza">
+        @foreach ($recurringTotals as $period)
+            @if ($period['frequency'] !== \App\Enums\RecurringFrequency::Monthly && (float) $period['amount'] > 0)
+                <article class="grand-total-card total-monthly">
+                    <span class="metric-label">Rinnovi · {{ $period['frequency']->label() }}</span>
+                    <strong>{{ Number::currency((float) $period['amount'], in: 'EUR', locale: 'it') }}</strong>
+                    <span class="metric-caption">Importi reali {{ $period['frequency']->suffix() }}, non incassi già ricevuti</span>
+                </article>
+            @endif
+        @endforeach
+    </section>
+
     <section class="status-section">
         <div class="section-heading">
             <div>
@@ -55,6 +67,11 @@
                         <span>Una tantum</span>
                         <strong>{{ Number::currency($total['one_time'], in: 'EUR', locale: 'it') }}</strong>
                     </div>
+                    @foreach ($recurringByStatus->get($total['status']->value, collect()) as $period)
+                        @if ($period->recurring_frequency !== 'mensile' && (float) $period->amount > 0)
+                            <div class="status-amount"><span>{{ \App\Enums\RecurringFrequency::from($period->recurring_frequency)->label() }}</span><strong>{{ Number::currency((float) $period->amount, in: 'EUR', locale: 'it') }}</strong></div>
+                        @endif
+                    @endforeach
                 </article>
             @endforeach
         </div>
@@ -112,7 +129,7 @@
                         <tr>
                             <th>Collaborazione</th>
                             <th>Situazione</th>
-                            <th class="text-right">Mensile</th>
+                            <th class="text-right">Rinnovo</th>
                             <th class="text-right">Una tantum</th>
                             <th>Deadline</th>
                             <th><span class="sr-only">Azioni</span></th>
@@ -129,12 +146,12 @@
                                     @endif
                                 </td>
                                 <td data-label="Situazione"><span class="status-pill {{ $collaboration->status->cssClass() }}"><span></span>{{ $collaboration->status->label() }}</span></td>
-                                <td data-label="Mensile" class="money-cell text-right">{{ Number::currency((float) $collaboration->monthly_revenue, in: 'EUR', locale: 'it') }}</td>
+                                <td data-label="Rinnovo" class="money-cell text-right">{{ Number::currency((float) $collaboration->recurring_amount, in: 'EUR', locale: 'it') }}<br><small>{{ $collaboration->recurring_frequency->suffix() }}</small></td>
                                 <td data-label="Una tantum" class="money-cell text-right">{{ Number::currency((float) $collaboration->one_time_revenue, in: 'EUR', locale: 'it') }}</td>
                                 <td data-label="Deadline">
-                                    @if ($collaboration->payment_deadline)
+                                    @if ($collaboration->nextPaymentDeadline())
                                         <span class="deadline deadline-{{ $deadlineState ?? 'neutral' }}">
-                                            {{ $collaboration->payment_deadline->translatedFormat('d M Y') }}
+                                            {{ $collaboration->nextPaymentDeadline()->translatedFormat('d M Y') }}
                                             @if ($deadlineState === 'overdue') <small>Scaduta</small>
                                             @elseif ($deadlineState === 'today') <small>Oggi</small>
                                             @elseif ($deadlineState === 'upcoming') <small>Prossima</small>

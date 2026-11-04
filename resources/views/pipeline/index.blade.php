@@ -24,6 +24,10 @@
             <select id="stage" name="stage"><option value="">Tutti gli stati</option>@foreach ($stages as $stage)<option value="{{ $stage->value }}" @selected(($filters['stage'] ?? '') === $stage->value)>{{ $stage->label() }}</option>@endforeach</select>
             <label class="sr-only" for="follow_up">Follow-up</label>
             <select id="follow_up" name="follow_up"><option value="">Tutti i follow-up</option>@foreach (['due' => 'Oggi / scaduti', 'upcoming' => 'Prossimi', 'none' => 'Non pianificati'] as $value => $label)<option value="{{ $value }}" @selected(($filters['follow_up'] ?? '') === $value)>{{ $label }}</option>@endforeach</select>
+            @foreach (['renewal' => 'Rinnovi', 'payment_due' => 'Rate / saldo'] as $key => $label)
+                <label class="sr-only" for="{{ $key }}">{{ $label }}</label>
+                <select id="{{ $key }}" name="{{ $key }}"><option value="">{{ $label }}: tutti</option>@foreach (['due' => 'Oggi / scaduti', 'upcoming' => 'Prossimi', 'none' => 'Non pianificati'] as $value => $text)<option value="{{ $value }}" @selected(($filters[$key] ?? '') === $value)>{{ $label }}: {{ $text }}</option>@endforeach</select>
+            @endforeach
             <button class="button button-secondary">Filtra</button><a class="button button-link" href="{{ route('pipeline') }}">Azzera</a>
         </form>
     </section>
@@ -44,8 +48,13 @@
                             @if ($item->service)<p class="muted">{{ $item->service }}</p>@endif
                             @if ($item->demo_type)<p class="muted">{{ $item->demo_type }}{{ $item->demo_date ? ' · '.$item->demo_date->format('d/m/Y') : '' }}</p>@endif
                             @if (in_array($item->pipeline_stage, [\App\Enums\PipelineStage::Contract, \App\Enums\PipelineStage::Paid], true))<p class="contract-label">{{ $item->contractType() }}</p>@endif
-                            <div class="opportunity-money"><span>{{ Number::currency((float) $item->monthly_revenue, in: 'EUR', locale: 'it') }} / mese</span><span>{{ Number::currency((float) $item->one_time_revenue, in: 'EUR', locale: 'it') }} una tantum</span></div>
-                            @if ($item->payment_deadline)
+                            <div class="opportunity-money"><span>{{ Number::currency((float) $item->recurring_amount, in: 'EUR', locale: 'it') }} {{ $item->recurring_frequency->suffix() }}</span><span>{{ Number::currency((float) $item->one_time_revenue, in: 'EUR', locale: 'it') }} una tantum</span></div>
+                            @if ($item->next_renewal_date)<p class="follow-up-date">Rinnovo: {{ $item->next_renewal_date->format('d/m/Y') }}</p>@endif
+                            @if ($item->payment_total !== null)
+                                @include('collaborations._payment-summary', ['item' => $item])
+                                <a class="back-link" href="{{ route('collaborations.edit', $item) }}">Gestisci rate e incassi →</a>
+                            @endif
+                            @if ($item->payment_deadline && $item->payment_total === null)
                                 <p class="follow-up-date {{ in_array($item->deadlineState(), ['overdue', 'today'], true) ? 'follow-up-due' : '' }}">Scadenza pagamento: {{ $item->payment_deadline->format('d/m/Y') }}{{ $item->deadlineState() === 'overdue' ? ' · Scaduto' : ($item->deadlineState() === 'today' ? ' · Oggi' : '') }}</p>
                             @endif
                             @if ($item->paid_at)<p class="contract-label">Incassato il {{ $item->paid_at->format('d/m/Y') }}</p>@endif
