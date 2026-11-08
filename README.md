@@ -41,6 +41,8 @@ composer test
 
 La suite copre accesso, rate limit, CRUD, validazione, importi in formato italiano, dashboard, filtri, paginazione e stati delle deadline.
 
+La suite forza SQLite `:memory:` e ignora le cache normali di configurazione/rotte. `Tests\TestCase` interrompe l’avvio se l’ambiente non è `testing` o il database non è in memoria, prima che `RefreshDatabase` possa eseguire migrazioni distruttive. Non rimuovere questa protezione e non usare il database locale/VPS per eseguire i test.
+
 ## Pipeline commerciale
 
 La pipeline usa **un solo stato**, senza esiti separati: Da contattare, Outbound inviato, Risposta ricevuta, Demo programmata, Demo svolta, Preventivo inviato, Negoziazione, Contratto, Pagato, Rimandato e Rifiutato. Da classificare resta disponibile per le vecchie schede. Rimandato indica progetti sospesi (con eventuale follow-up), Rifiutato quelli abortiti. Nessuno dei due elimina dati. Riaprendo una scheda sospesa/rifiutata, la situazione passa a Forse salvo una diversa scelta esplicita.
@@ -74,6 +76,8 @@ Per aggiornare la VPS: backup SQLite, aggiornamento codice, `php artisan optimiz
 La board mostra al massimo 30 schede per colonna; l’elenco paginato dà accesso a tutte le opportunità. I filtri per categoria, stato e follow-up valgono per entrambe le viste.
 
 ## ChatGPT via MCP (senza Auth0)
+
+Anche **Claude web/Desktop/mobile/Cowork** può usare gli stessi strumenti tramite `/mcp/claude`, con OAuth/DCR e callback esatto `https://claude.ai/api/mcp/auth_callback`. `/mcp` resta invariato per ChatGPT. Vedi [la guida Claude per la VPS](docs/CLAUDE-VPS.md). MCP v2.2.0 aggiunge discovery e audience dedicate, senza token statici o nuovi scope; applicare la migrazione del 08/11/2026 prima di collegarsi.
 
 Il server `/mcp` espone lettura, ricerca, creazione, aggiornamento ed eliminazione della pipeline con OAuth Passport e PKCE S256. Richiede un amministratore distinto dall’accesso tramite codice. L’area `/integrazioni` mostra collegamenti revocabili e registro modifiche; idempotenza e revisioni proteggono da duplicati e sovrascritture. L’eliminazione definitiva di un singolo contatto richiede il permesso separato `pipeline:delete`, il nome esatto, la revisione e la conferma esplicita dell’utente in chat; il registro mantiene lo snapshot precedente. Non invia email.
 

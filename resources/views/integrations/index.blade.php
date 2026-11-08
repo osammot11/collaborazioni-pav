@@ -1,11 +1,14 @@
 @extends('layouts.app')
-@section('title', 'ChatGPT e integrazioni')
+@section('title', 'ChatGPT, Claude e integrazioni')
 @section('content')
-<section class="page-heading"><div><p class="eyebrow">Il tuo assistente, nella pipeline</p><h1>ChatGPT e integrazioni</h1><p class="muted">Collegamenti OAuth revocabili e registro delle modifiche effettuate dagli strumenti.</p></div></section>
+<section class="page-heading"><div><p class="eyebrow">Il tuo assistente, nella pipeline</p><h1>ChatGPT, Claude e integrazioni</h1><p class="muted">Collegamenti OAuth revocabili e registro delle modifiche effettuate dagli strumenti.</p></div></section>
 <section class="card integration-card integration-card-wide">
-    <h2>Endpoint MCP</h2>
+    <h2>Endpoint MCP · ChatGPT</h2>
     <code class="endpoint-url">{{ config('integrations.resource') }}</code>
     <p class="muted">In ChatGPT aggiungi un’app MCP con autenticazione OAuth. Al collegamento accedi come amministratore e controlla i permessi richiesti. Le credenziali non vanno incollate in chat.</p>
+    <h2>Endpoint MCP · Claude</h2>
+    <code class="endpoint-url">{{ config('integrations.claude_resource') }}</code>
+    <p class="muted">In Claude, Customize → Connectors → Add custom connector. Scegli Sign in now e Register automatically (OAuth/DCR). Non serve un client secret. Accedi con l’amministratore del gestionale e verifica il callback claude.ai e i permessi prima di approvare. Non scegliere No sign-in o Published identity: questo server usa DCR.</p>
     <h2>Collegamenti</h2>
     @forelse ($connections as $clientId => $tokens)
         @php($active = $tokens->filter(fn ($token) => ! $token->revoked && $token->expires_at?->isFuture()))
@@ -21,7 +24,7 @@
     @endforelse
 </section>
 <section class="card integration-card integration-card-wide">
-    <h2>Registro modifiche ChatGPT</h2>
+    <h2>Registro modifiche MCP · ChatGPT e Claude</h2>
     @forelse ($operations as $operation)
         <details class="audit-entry">
             <summary>{{ \Carbon\Carbon::parse($operation->created_at)->format('d/m/Y H:i') }} · {{ match ($operation->action) { 'create' => 'Creazione', 'delete' => 'Eliminazione', default => 'Modifica' } }} · Opportunità #{{ $operation->collaboration_id }}</summary>

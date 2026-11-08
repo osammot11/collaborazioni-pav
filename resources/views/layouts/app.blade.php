@@ -25,7 +25,7 @@
 
         <nav class="header-actions" aria-label="Azioni principali">
             @if (session('collaborations_authorized', false) || auth()->check())
-            <a href="{{ route('integrations.index') }}" class="button button-ghost button-compact">ChatGPT</a>
+            <a href="{{ route('integrations.index') }}" class="button button-ghost button-compact">Integrazioni</a>
             <a href="{{ route('pipeline') }}" class="button button-ghost button-compact">Pipeline</a>
             <a href="{{ route('dashboard') }}" class="button button-ghost button-compact">Rendite</a>
             <a href="{{ route('collaborations.create') }}" class="button button-primary button-compact">

@@ -43,13 +43,14 @@ class McpIntegrationTest extends TestCase
             ->assertCreated()->json('client_id');
     }
 
-    private function authorization(string $client, string $verifier, string $scope = 'pipeline:read pipeline:write'): array
+    private function authorization(string $client, string $verifier, string $scope = 'pipeline:read pipeline:write', ?string $resource = null, ?string $redirect = null): array
     {
-        $params = ['client_id' => $client, 'redirect_uri' => config('integrations.redirect_uris')[0],
+        $params = ['client_id' => $client, 'redirect_uri' => $redirect ?? config('integrations.redirect_uris')[0],
             'response_type' => 'code', 'scope' => $scope, 'state' => Str::random(40),
             'code_challenge' => rtrim(strtr(base64_encode(hash('sha256', $verifier, true)), '+/', '-_'), '='),
-            'code_challenge_method' => 'S256', 'resource' => config('integrations.resource')];
+            'code_challenge_method' => 'S256', 'resource' => $resource ?? config('integrations.resource')];
         $response = $this->get('/oauth/authorize?'.http_build_query($params))->assertOk()->assertSee('Autorizza collegamento');
+        $response->assertSee(parse_url($params['redirect_uri'], PHP_URL_HOST));
         if (str_contains($scope, 'pipeline:delete')) {
             $response->assertSee('stai autorizzando anche l’eliminazione definitiva');
         } else {
@@ -74,13 +75,101 @@ class McpIntegrationTest extends TestCase
         return ['client_id' => $client, ...$this->postJson('/oauth/token', $params)->assertOk()->json()];
     }
 
-    private function rpc(string $name, array $arguments = [], ?string $token = null)
+    private function rpc(string $name, array $arguments = [], ?string $token = null, string $endpoint = '/mcp')
     {
         Auth::guard('api')->forgetUser();
         $headers = $token ? ['Authorization' => 'Bearer '.$token] : [];
 
-        return $this->postJson('/mcp', ['jsonrpc' => '2.0', 'id' => 1, 'method' => 'tools/call',
+        return $this->postJson($endpoint, ['jsonrpc' => '2.0', 'id' => 1, 'method' => 'tools/call',
             'params' => ['name' => $name, 'arguments' => $arguments]], $headers);
+    }
+
+    private function claudeGrant(string $scope = 'pipeline:read pipeline:write'): array
+    {
+        $this->loginAdmin();
+        $callback = 'https://claude.ai/api/mcp/auth_callback';
+        $client = $this->postJson('/oauth/register', ['client_name' => 'Claude', 'redirect_uris' => [$callback],
+            'token_endpoint_auth_method' => 'none', 'grant_types' => ['authorization_code', 'refresh_token'],
+            'response_types' => ['code']])->assertCreated()->assertJsonPath('token_endpoint_auth_method', 'none')->json('client_id');
+
+        return $this->authorization($client, Str::random(64), $scope, config('integrations.claude_resource'), $callback);
+    }
+
+    private function formToken(array $params)
+    {
+        return $this->post('/oauth/token', $params, [
+            'Content-Type' => 'application/x-www-form-urlencoded', 'Accept' => 'application/json',
+        ]);
+    }
+
+    public function test_claude_has_its_own_discovery_challenge_and_exact_callback(): void
+    {
+        $resource = config('integrations.claude_resource');
+        $metadata = rtrim(config('app.url'), '/').'/.well-known/oauth-protected-resource/mcp/claude';
+        $this->getJson('/.well-known/oauth-protected-resource/mcp/claude')->assertOk()->assertJsonPath('resource', $resource);
+        $this->get('/mcp/claude')->assertUnauthorized()->assertHeader('WWW-Authenticate', 'Bearer resource_metadata="'.$metadata.'"');
+        foreach (['initialize', 'tools/list'] as $method) {
+            $this->postJson('/mcp/claude', ['jsonrpc' => '2.0', 'id' => 1, 'method' => $method])
+                ->assertUnauthorized()->assertHeader('WWW-Authenticate', 'Bearer resource_metadata="'.$metadata.'"');
+        }
+        $this->postJson('/mcp', ['jsonrpc' => '2.0', 'id' => 1, 'method' => 'tools/list'])->assertOk()->assertJsonCount(6, 'result.tools');
+        foreach (['https://claude.ai.evil.example/api/mcp/auth_callback', 'https://claude.ai/api/mcp/auth_callback/',
+            'https://claude.ai/api/mcp/auth_callback?next=https://evil.example', 'http://127.0.0.1:3000/callback'] as $redirect) {
+            $this->postJson('/oauth/register', ['client_name' => 'Claude', 'redirect_uris' => [$redirect]])->assertUnprocessable();
+        }
+    }
+
+    public function test_claude_dcr_form_token_initialize_tools_refresh_and_revocation(): void
+    {
+        $params = $this->claudeGrant();
+        $auth = $this->formToken($params)->assertOk()->json();
+        $token = $auth['access_token'];
+        foreach (['2025-06-18', '2025-11-25'] as $protocol) {
+            Auth::guard('api')->forgetUser();
+            $this->postJson('/mcp/claude', ['jsonrpc' => '2.0', 'id' => 1, 'method' => 'initialize', 'params' => [
+                'protocolVersion' => $protocol, 'capabilities' => (object) [], 'clientInfo' => ['name' => 'Claude', 'version' => '1.0'],
+            ]], ['Authorization' => 'Bearer '.$token])->assertOk()->assertJsonPath('result.protocolVersion', $protocol);
+        }
+        $created = $this->rpc('create_opportunity', ['request_id' => (string) Str::uuid(), 'fields' => ['name' => 'Cliente Claude',
+            'recurring_amount' => '1200.00', 'recurring_frequency' => 'annuale']], $token, '/mcp/claude')
+            ->assertJsonPath('result.isError', false)->assertJsonPath('result.structuredContent.opportunity.recurring_frequency', 'annuale');
+        $id = $created->json('result.structuredContent.opportunity.id');
+        $this->rpc('get_opportunity', ['id' => $id], $token, '/mcp/claude')->assertJsonPath('result.structuredContent.opportunity.name', 'Cliente Claude');
+        $this->rpc('get_opportunity', ['id' => $id], $token)->assertUnauthorized();
+        $refresh = ['grant_type' => 'refresh_token', 'client_id' => $params['client_id'],
+            'refresh_token' => $auth['refresh_token'], 'resource' => config('integrations.claude_resource')];
+        $rotated = $this->formToken($refresh)->assertOk()->json();
+        $this->assertNotSame($auth['refresh_token'], $rotated['refresh_token']);
+        $this->formToken($refresh)->assertStatus(400)->assertJsonPath('error', 'invalid_grant');
+        $this->rpc('pipeline_options', [], $rotated['access_token'], '/mcp/claude')->assertJsonPath('result.isError', false);
+        $this->delete('/integrazioni/'.$params['client_id'])->assertRedirect();
+        $this->rpc('pipeline_options', [], $rotated['access_token'], '/mcp/claude')->assertUnauthorized();
+        $this->formToken([...$refresh, 'refresh_token' => $rotated['refresh_token']])->assertStatus(400)->assertJsonPath('error', 'invalid_grant');
+    }
+
+    public function test_claude_grants_cannot_change_resource_and_read_only_scope_cannot_write(): void
+    {
+        $params = $this->claudeGrant('pipeline:read offline_access');
+        $this->formToken([...$params, 'resource' => config('integrations.resource')])->assertStatus(400)->assertJsonPath('error', 'invalid_target');
+        $auth = $this->formToken($params)->assertOk()->json();
+        $this->rpc('create_opportunity', ['request_id' => (string) Str::uuid(), 'fields' => ['name' => 'Non autorizzato']],
+            $auth['access_token'], '/mcp/claude')->assertJsonPath('result.isError', true);
+        $this->assertDatabaseCount('collaborations', 0);
+        $this->formToken(['grant_type' => 'refresh_token', 'client_id' => $params['client_id'],
+            'refresh_token' => $auth['refresh_token'], 'resource' => config('integrations.resource')])
+            ->assertStatus(400)->assertJsonPath('error', 'invalid_grant');
+    }
+
+    public function test_legacy_chatgpt_refresh_tokens_keep_working_only_on_the_original_resource(): void
+    {
+        $auth = $this->credentials();
+        DB::table('oauth_resource_bindings')->where('credential_hash', hash('sha256', 'refresh:'.$auth['refresh_token']))->delete();
+        $params = ['grant_type' => 'refresh_token', 'client_id' => $auth['client_id'],
+            'refresh_token' => $auth['refresh_token'], 'resource' => config('integrations.claude_resource')];
+        $this->formToken($params)->assertStatus(400)->assertJsonPath('error', 'invalid_grant');
+        $new = $this->formToken([...$params, 'resource' => config('integrations.resource')])->assertOk()->json();
+        $this->rpc('pipeline_options', [], $new['access_token'])->assertJsonPath('result.isError', false);
+        $this->rpc('pipeline_options', [], $new['access_token'], '/mcp/claude')->assertUnauthorized();
     }
 
     public function test_public_discovery_and_schema_do_not_expose_pipeline_data(): void

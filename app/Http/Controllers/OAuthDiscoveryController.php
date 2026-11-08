@@ -13,10 +13,27 @@ class OAuthDiscoveryController extends Controller
         return rtrim(config('app.url'), '/');
     }
 
-    public function resource()
+    public static function resources(): array
+    {
+        return [config('integrations.resource'), config('integrations.claude_resource')];
+    }
+
+    public static function requestResource(Request $request): string
+    {
+        return $request->is('mcp/claude', '.well-known/oauth-protected-resource/mcp/claude')
+            ? config('integrations.claude_resource') : config('integrations.resource');
+    }
+
+    public static function metadataUrl(Request $request): string
+    {
+        return self::issuer().'/.well-known/oauth-protected-resource'
+            .($request->is('mcp/claude') ? '/mcp/claude' : '/mcp');
+    }
+
+    public function resource(Request $request)
     {
         return response()->json([
-            'resource' => config('integrations.resource'),
+            'resource' => self::requestResource($request),
             'authorization_servers' => [self::issuer()],
             'scopes_supported' => ['pipeline:read', 'pipeline:write', 'pipeline:delete', 'offline_access'],
             'bearer_methods_supported' => ['header'],

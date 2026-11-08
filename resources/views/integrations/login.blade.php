@@ -3,7 +3,7 @@
 @section('content')
 <section class="integration-card card">
     <p class="eyebrow">Collegamento sicuro</p>
-    <h1>Autorizza ChatGPT</h1>
+    <h1>Autorizza ChatGPT o Claude</h1>
     <p class="muted">Usa l’account amministratore creato sulla VPS. Il codice della dashboard non autorizza applicazioni esterne.</p>
     <form method="POST" action="{{ url('/login') }}" class="access-form">
         @csrf

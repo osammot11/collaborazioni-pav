@@ -102,8 +102,8 @@ abstract class PipelineTool extends Tool
         $scope = $this->scope();
         if (! $request->user()?->is_admin || ! $request->user()->tokenCan($scope)) {
             return (new ResponseFactory(Response::error('Autorizzazione OAuth con permesso '.$scope.' richiesta.')))
-                ->withMeta('mcp/www_authenticate', ['Bearer resource_metadata="'.OAuthDiscoveryController::issuer()
-                    .'/.well-known/oauth-protected-resource/mcp", error="insufficient_scope", scope="'.$scope.'"']);
+                ->withMeta('mcp/www_authenticate', ['Bearer resource_metadata="'.OAuthDiscoveryController::metadataUrl(request())
+                    .'", error="insufficient_scope", scope="'.$scope.'"']);
         }
         try {
             $data = match ($this->action) {

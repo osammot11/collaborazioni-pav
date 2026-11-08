@@ -14,7 +14,7 @@ class PipelineServer extends Server
 {
     protected string $name = 'Produce a Value · Pipeline';
 
-    protected string $version = '2.1.0';
+    protected string $version = '2.2.0';
 
     protected string $instructions = 'Gestionale commerciale personale. Usa pipeline_options per i valori ammessi. '
         .'La pipeline usa un solo stato pipeline_stage, senza esiti. La situazione dei pagamenti resta separata per il riepilogo delle rendite. Prima di modificare rileggi l’opportunità e usa la revision corrente. '
