@@ -119,6 +119,23 @@ class McpIntegrationTest extends TestCase
         }
     }
 
+    public function test_jarvis_registers_with_its_exact_callback_and_uses_the_claude_endpoint(): void
+    {
+        foreach (['https://jarvis.tommasogiovannoni.com.evil.example/oauth/callback',
+            'https://jarvis.tommasogiovannoni.com/oauth/callback/', 'http://jarvis.tommasogiovannoni.com/oauth/callback'] as $redirect) {
+            $this->postJson('/oauth/register', ['client_name' => 'Jarvis', 'redirect_uris' => [$redirect]])->assertUnprocessable();
+        }
+        $this->loginAdmin();
+        $callback = 'https://jarvis.tommasogiovannoni.com/oauth/callback';
+        $client = $this->postJson('/oauth/register', ['client_name' => 'Jarvis', 'redirect_uris' => [$callback],
+            'token_endpoint_auth_method' => 'none', 'grant_types' => ['authorization_code', 'refresh_token'],
+            'response_types' => ['code']])->assertCreated()->json('client_id');
+        $params = $this->authorization($client, Str::random(64), 'pipeline:read pipeline:write offline_access',
+            config('integrations.claude_resource'), $callback);
+        $token = $this->formToken($params)->assertOk()->json('access_token');
+        $this->rpc('pipeline_options', [], $token, '/mcp/claude')->assertJsonPath('result.isError', false);
+    }
+
     public function test_claude_dcr_form_token_initialize_tools_refresh_and_revocation(): void
     {
         $params = $this->claudeGrant();

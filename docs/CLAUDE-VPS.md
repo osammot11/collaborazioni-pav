@@ -38,6 +38,8 @@ Il callback Claude è già abilitato per default e non dipende dal valore preesi
 CLAUDE_REDIRECT_URIS=https://claude.ai/api/mcp/auth_callback
 ```
 
+Anche Jarvis (`https://jarvis.tommasogiovannoni.com`) usa l'endpoint `/mcp/claude`; il suo callback `https://jarvis.tommasogiovannoni.com/oauth/callback` è abilitato per default ed è sovrascrivibile con `JARVIS_REDIRECT_URIS`.
+
 Non modificare `CHATGPT_REDIRECT_URIS`, non usare wildcard e non aggiungere callback arbitrari per aggirare errori. Dopo modifiche `.env`, rigenerare la configurazione con `php artisan config:cache`.
 
 ## 2. Verificare trasporto e discovery
